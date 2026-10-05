@@ -6,6 +6,9 @@
     },
     {
       "path": "./tsconfig.node.json"
+    },
+    {
+      "path": "./tsconfig.server.json"
     }
   ],
   "compilerOptions": {
@@ -13,6 +16,9 @@
       "@/*": [
         "./src/*"
       ]
-    }
+    },
+    "types": [
+      "node"
+    ]
   }
 }
