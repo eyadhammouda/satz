@@ -1,10 +1,8 @@
 import { expect, test, type Page } from '@playwright/test'
 
-const STARTERS = 9
-
-// 2026-10-05 15:00 local time.
-const DAY_ONE = new Date(2026, 9, 5, 15, 0)
-const DAY_TWO = new Date(2026, 9, 6, 15, 0)
+// 2026-10-06 18:00 local time.
+const START = new Date(2026, 9, 6, 18, 0)
+const MIN = 60_000
 
 /** Fails the test on any console warning or error. */
 function watchConsole(page: Page) {
@@ -16,230 +14,8 @@ function watchConsole(page: Page) {
   return problems
 }
 
-async function open(page: Page, at = DAY_ONE) {
-  await page.clock.setFixedTime(at)
-  await page.goto('/')
-}
-
-async function stored(page: Page) {
-  return page.evaluate(() => JSON.parse(localStorage.getItem('satz.v1') ?? 'null'))
-}
-
-test('first launch seeds nine sentences and offers practice', async ({ page }) => {
-  const problems = watchConsole(page)
-  await open(page)
-  await expect(page.getByRole('heading', { name: 'All done for today' })).toBeVisible()
-  await expect(page.getByRole('button', { name: "Practise today's sentences (9)" })).toBeVisible()
-  await expect(page.getByRole('button', { name: 'Start review' })).toHaveCount(0)
-  await expect(page.getByText('9 sentences')).toBeVisible()
-  await expect(page.getByText('9 of 15 added today')).toBeVisible()
-
-  await page.getByRole('tab', { name: 'Library' }).click()
-  await expect(page.locator('main li')).toHaveCount(STARTERS)
-  await expect(page.locator('main li').first()).toContainText('Ich werde es selbst tun')
-  await expect(page.locator('main li').first()).toContainText('Tomorrow')
-
-  const data = await stored(page)
-  expect(data.version).toBe(1)
-  expect(data.sentences).toHaveLength(STARTERS)
-  expect(data.sentences[0]).toMatchObject({ createdDay: '2026-10-05', box: 0, dueDay: '2026-10-06' })
-  expect(problems).toEqual([])
-})
-
-test('adding sentences takes only the keyboard and has no daily limit', async ({ page }) => {
-  const problems = watchConsole(page)
-  await open(page)
-  await page.getByRole('tab', { name: 'Add' }).click()
-  const german = page.getByLabel('German')
-  await expect(german).toBeFocused()
-
-  for (let i = 1; i <= 20; i++) {
-    await page.keyboard.type(`Satz Nummer ${i}`)
-    await page.keyboard.press('Enter')
-    await expect(page.getByLabel('English')).toBeFocused()
-    await page.keyboard.type(`Sentence number ${i}`)
-    await page.keyboard.press('Enter')
-    await expect(german).toBeFocused()
-    await expect(german).toHaveValue('')
-  }
-
-  const list = page.locator('main li')
-  await expect(list).toHaveCount(STARTERS + 20)
-  await expect(list.first()).toContainText('Satz Nummer 20')
-  await expect(page.getByText(`Added today (${STARTERS + 20})`)).toBeVisible()
-
-  await page.getByRole('button', { name: 'Delete "Satz Nummer 20"' }).click()
-  await expect(list).toHaveCount(STARTERS + 19)
-
-  await page.getByRole('tab', { name: 'Today' }).click()
-  await expect(page.getByText('28 added today')).toBeVisible()
-  expect(problems).toEqual([])
-})
-
-test('empty fields and duplicates are refused', async ({ page }) => {
-  await open(page)
-  await page.getByRole('tab', { name: 'Add' }).click()
-  await expect(page.getByLabel('German')).toBeFocused()
-  await page.keyboard.press('Enter')
-  await expect(page.getByLabel('German')).toHaveAttribute('aria-invalid', 'true')
-
-  await page.keyboard.type('Ich bin mir ziemlich sicher.')
-  await page.keyboard.press('Enter')
-  await page.keyboard.press('Enter')
-  await expect(page.getByLabel('English')).toBeFocused()
-  await page.keyboard.type('I am pretty sure')
-  await page.keyboard.press('Enter')
-  await expect(page.getByText('Already in your library')).toBeVisible()
-  expect((await stored(page)).sentences).toHaveLength(STARTERS)
-})
-
-test('practice mode leaves every box and dueDay unchanged', async ({ page }) => {
-  await open(page)
-  const before = await stored(page)
-  await page.getByRole('button', { name: "Practise today's sentences (9)" }).click()
-  await expect(page.getByText('1 of 9')).toBeVisible()
-  const input = page.getByPlaceholder('Type the German')
-  await expect(input).toBeFocused()
-
-  for (let i = 0; i < STARTERS; i++) {
-    await page.keyboard.type('falsch')
-    await page.keyboard.press('Enter')
-    await expect(input).toHaveAttribute('readonly', '')
-    await page.keyboard.press('2')
-  }
-  await expect(page.getByText('First try correct')).toBeVisible()
-  await page.getByRole('button', { name: 'Done' }).click()
-  expect(await stored(page)).toEqual(before)
-})
-
-test('next study day: due sentences, grading and repeats', async ({ page }) => {
-  const problems = watchConsole(page)
-  await open(page)
-  await open(page, DAY_TWO)
-  await expect(page.getByText('due', { exact: true })).toBeVisible()
-  await expect(page.getByRole('heading')).toContainText('9')
-  await page.getByRole('button', { name: 'Start review' }).click()
-
-  const input = page.getByPlaceholder('Type the German')
-  await expect(input).toHaveAttribute('lang', 'de')
-  await expect(input).toHaveAttribute('autocomplete', 'off')
-  await expect(input).toHaveAttribute('autocorrect', 'off')
-  await expect(input).toHaveAttribute('autocapitalize', 'off')
-  await expect(input).toHaveAttribute('spellcheck', 'false')
-
-  const englishToGerman = Object.fromEntries(
-    (await stored(page)).sentences.map((s: { english: string; german: string }) => [s.english, s.german]),
-  )
-  const prompt = page.locator('main > p').first()
-
-  // First card: exact answer.
-  const firstEnglish = (await prompt.textContent())!
-  await page.keyboard.type(englishToGerman[firstEnglish])
-  await page.keyboard.press('Enter')
-  await expect(page.getByText('Correct', { exact: true })).toBeVisible()
-  await page.keyboard.press('Enter')
-  await expect(page.getByText('2 of 9')).toBeVisible()
-
-  // Second card: wrong answer, graded Missed.
-  const missedEnglish = (await prompt.textContent())!
-  await page.keyboard.type('ganz falsch')
-  await page.keyboard.press('Enter')
-  await expect(page.getByRole('button', { name: /Missed/ })).toBeVisible()
-  await page.keyboard.press('1')
-
-  // Remaining cards: reveal with an empty answer, then Got it.
-  for (let i = 0; i < 7; i++) {
-    await page.keyboard.press('Enter')
-    await expect(page.getByRole('button', { name: /Got it/ })).toBeVisible()
-    await page.keyboard.press('2')
-  }
-
-  // The missed sentence comes back at the end of the session.
-  await expect(prompt).toHaveText(missedEnglish)
-  await page.keyboard.type(englishToGerman[missedEnglish])
-  await page.keyboard.press('Enter')
-  await page.keyboard.press('Enter')
-
-  await expect(page.getByText('Reviewed')).toBeVisible()
-  await expect(page.locator('dd').nth(0)).toHaveText('9')
-  await expect(page.locator('dd').nth(1)).toHaveText('8')
-  await page.getByRole('button', { name: 'Done' }).click()
-  await expect(page.getByRole('heading', { name: 'All done for today' })).toBeVisible()
-
-  const byEnglish = Object.fromEntries(
-    (await stored(page)).sentences.map((s: { english: string }) => [s.english, s]),
-  )
-  expect(byEnglish[firstEnglish]).toMatchObject({ box: 1, dueDay: '2026-10-09', correct: 1, lastReviewedDay: '2026-10-06' })
-  expect(byEnglish[missedEnglish]).toMatchObject({ box: 0, dueDay: '2026-10-07', missed: 1, correct: 0 })
-  expect(problems).toEqual([])
-})
-
-test('closing a review keeps the grades already given', async ({ page }) => {
-  await open(page)
-  await open(page, DAY_TWO)
-  await page.getByRole('button', { name: 'Start review' }).click()
-  await page.keyboard.press('Enter')
-  await page.keyboard.press('2')
-  await page.getByRole('button', { name: 'Close' }).click()
-  await expect(page.getByRole('heading')).toContainText('8')
-})
-
-test('a lowercase answer is not exact and the wrong word is marked', async ({ page }) => {
-  await open(page)
-  await page.evaluate(() => {
-    const data = JSON.parse(localStorage.getItem('satz.v1')!)
-    data.sentences = data.sentences.filter((s: { german: string }) => s.german === 'Lass mich mal sehen')
-    localStorage.setItem('satz.v1', JSON.stringify(data))
-  })
-  await page.reload()
-  await page.getByRole('button', { name: "Practise today's sentences (1)" }).click()
-  await page.keyboard.type('lass mich mal sehen')
-  await page.keyboard.press('Enter')
-  await expect(page.getByText('Correct', { exact: true })).toHaveCount(0)
-  await expect(page.locator('.text-destructive')).toHaveText('wrong: lass')
-  await expect(page.locator('.underline')).toHaveText('missing: Lass')
-  await expect(page.getByRole('button', { name: /Missed/ })).toBeVisible()
-  await expect(page.getByRole('button', { name: /Got it/ })).toBeVisible()
-})
-
-test('studyDay at 02:00 belongs to the previous calendar date', async ({ page }) => {
-  await open(page, new Date(2026, 9, 6, 2, 0))
-  const data = await stored(page)
-  expect(data.sentences[0].createdDay).toBe('2026-10-05')
-  expect(data.sentences[0].dueDay).toBe('2026-10-06')
-})
-
-test('library search, edit and delete', async ({ page }) => {
-  await open(page)
-  await page.getByRole('tab', { name: 'Library' }).click()
-  await page.getByRole('searchbox', { name: 'Search' }).fill('schnee')
-  await expect(page.locator('main li')).toHaveCount(1)
-  await page.getByRole('searchbox', { name: 'Search' }).fill('LINZ')
-  await expect(page.locator('main li')).toHaveCount(1)
-
-  const before = (await stored(page)).sentences.find((s: { german: string }) => s.german.includes('Linz'))
-  await page.locator('main li button').first().click() // the row, not its Listen button
-  const dialog = page.getByRole('dialog')
-  await dialog.getByLabel('German').fill('In Linz hat es gestern geschneit')
-  await dialog.getByRole('button', { name: 'Save' }).click()
-  await expect(dialog).toHaveCount(0)
-  const after = (await stored(page)).sentences.find((s: { id: string }) => s.id === before.id)
-  expect(after).toEqual({ ...before, german: 'In Linz hat es gestern geschneit' })
-
-  await page.locator('main li button').first().click() // the row, not its Listen button
-  await page.getByRole('dialog').getByRole('button', { name: 'Delete' }).click()
-  await page.getByRole('alertdialog').getByRole('button', { name: 'Cancel' }).click()
-  await expect(page.getByRole('dialog').getByRole('button', { name: 'Delete' })).toBeFocused()
-  await page.keyboard.press('Enter')
-  await page.getByRole('alertdialog').getByRole('button', { name: 'Delete' }).click()
-  await page.getByRole('searchbox', { name: 'Search' }).fill('')
-  await expect(page.locator('main li')).toHaveCount(STARTERS - 1)
-})
-
-test('listen is one click away in add, library, edit and review', async ({ page }) => {
-  const problems = watchConsole(page)
-  // Record what would play. The preview server has no /api/speak, so after the first
-  // sentence the app falls back to the browser voice: record both.
+/** Records what would be read aloud, instead of playing it. */
+async function fakeVoice(page: Page) {
   await page.addInitScript(() => {
     const played: string[] = []
     Object.assign(window, { played })
@@ -247,121 +23,250 @@ test('listen is one click away in add, library, edit and review', async ({ page 
       played.push(new URL(this.src).searchParams.get('text') ?? '')
       return Promise.resolve()
     }
-    const fakeVoice = { lang: 'de-DE', localService: true, name: 'Test', voiceURI: 'test', default: true }
-    speechSynthesis.getVoices = () => [fakeVoice as SpeechSynthesisVoice]
-    // The real setter only accepts real voices.
-    Object.defineProperty(SpeechSynthesisUtterance.prototype, 'voice', { set() {}, get: () => null })
-    speechSynthesis.speak = (utterance) => {
-      played.push(utterance.text)
-    }
   })
-  await open(page)
-  const spoken = () => page.evaluate(() => (window as unknown as { played: string[] }).played)
-  const listened = async (text: string) => {
-    await expect.poll(async () => (await spoken()).at(-1)).toBe(text)
+}
+
+const played = (page: Page) => page.evaluate(() => (window as unknown as { played: string[] }).played)
+
+async function open(page: Page, at = START) {
+  await fakeVoice(page)
+  await page.clock.install({ time: at })
+  await page.goto('/')
+  await expect(page.getByRole('button', { name: "Start today's lesson" })).toBeEnabled()
+}
+
+/** Waits for a new sentence on screen, then moves past it. */
+async function next(page: Page) {
+  await expect(page.getByText('New sentence')).toBeVisible()
+  const german = await page.locator('main p[lang="de"]').first().textContent()
+  await page.keyboard.press('Enter')
+  await expect(page.locator('main p[lang="de"]').first()).not.toHaveText(german!)
+}
+
+/** Shows two new sentences, then lets a minute pass so the first one is tested. */
+async function toFirstTest(page: Page) {
+  await page.getByRole('button', { name: "Start today's lesson" }).click()
+  await next(page)
+  await expect(page.getByText('New sentence')).toBeVisible()
+  await page.clock.fastForward(MIN)
+  await page.keyboard.press('Enter')
+  await expect(page.getByPlaceholder('Type the German')).toBeFocused()
+}
+
+const progress = (page: Page) => page.evaluate(() => JSON.parse(localStorage.getItem('satz.v2') ?? 'null'))
+
+/** The course, as the app loads it. */
+async function course(page: Page): Promise<{ german: string; english: string; alternatives: string[] }[]> {
+  return page.evaluate(async () => {
+    const rows = (await (await fetch('/sentences/000.json')).json()) as [number, string, string, string, string[]?][]
+    return rows.map(([, german, english, , alternatives]) => ({ german, english, alternatives: alternatives ?? [] }))
+  })
+}
+
+/** Answers the card on screen correctly. Works for new sentences and tests. */
+async function answerCorrectly(page: Page, byEnglish: Map<string, string>) {
+  const label = page.locator('main > p').first()
+  await expect(label).toBeVisible()
+  if ((await label.textContent()) === 'New sentence') {
+    await page.keyboard.press('Enter')
+    return 'intro'
   }
-
-  // While typing: the German field keeps focus after listening.
-  await page.getByRole('tab', { name: 'Add' }).click()
-  const german = page.getByLabel('German')
-  const fieldListen = page.locator('form').getByRole('button', { name: 'Listen' })
-  await expect(fieldListen).toHaveCount(0)
-  await german.fill('Wie geht es dir')
-  await german.focus()
-  await fieldListen.click()
-  await listened('Wie geht es dir')
-  await expect(german).toBeFocused()
-
-  // Added today rows.
+  const english = (await page.locator('main > p').nth(1).textContent())!
+  await page.getByPlaceholder('Type the German').fill(byEnglish.get(english)!)
   await page.keyboard.press('Enter')
-  await page.keyboard.type('How are you')
+  await expect(page.getByRole('status')).toHaveText('Correct')
   await page.keyboard.press('Enter')
-  await page.locator('main li').first().getByRole('button', { name: 'Listen' }).click()
-  await listened('Wie geht es dir')
+  return 'test'
+}
 
-  // Library rows play without opening the dialog.
-  await page.getByRole('tab', { name: 'Library' }).click()
-  const row = page.locator('main li').filter({ hasText: 'Linz' })
-  const text = (await row.locator('[lang="de"]').textContent()) ?? ''
-  await row.getByRole('button', { name: 'Listen' }).click()
-  await listened(text)
-  await expect(page.getByRole('dialog')).toHaveCount(0)
-
-  // The edit dialog reads the text as it is being edited.
-  await row.locator('button').first().click()
-  const dialog = page.getByRole('dialog')
-  await dialog.getByLabel('German').fill('In Linz schneit es')
-  await dialog.getByRole('button', { name: 'Listen' }).click()
-  await listened('In Linz schneit es')
-  await page.keyboard.press('Escape')
-
-  // Review answers.
-  await page.getByRole('tab', { name: 'Today' }).click()
-  await page.getByRole('button', { name: /Practise/ }).click()
-  await page.keyboard.press('Enter')
-  const answer = (await page.locator('main p[lang="de"]').first().textContent()) ?? ''
-  await page.getByRole('button', { name: 'Listen' }).click()
-  await listened(answer)
+test('home shows one button and no library or add tabs', async ({ page }) => {
+  const problems = watchConsole(page)
+  await open(page)
+  await expect(page.getByRole('tab')).toHaveCount(0)
+  await expect(page.getByText('Learned')).toBeVisible()
+  await expect(page.getByRole('link', { name: 'Tatoeba' })).toHaveAttribute('href', 'https://tatoeba.org')
   expect(problems).toEqual([])
 })
 
-test('an emptied library stays empty after reload', async ({ page }) => {
+test('a new sentence is shown with audio, then tested about a minute later', async ({ page }) => {
+  const problems = watchConsole(page)
   await open(page)
-  await page.evaluate(() => localStorage.setItem('satz.v1', JSON.stringify({ version: 1, sentences: [] })))
-  await page.reload()
-  await expect(page.getByRole('heading', { name: 'Add your first sentences' })).toBeVisible()
-  await page.getByRole('button', { name: 'Add sentences' }).click()
-  await expect(page.getByLabel('German')).toBeFocused()
+  const sentences = await course(page)
+  await page.getByRole('button', { name: "Start today's lesson" }).click()
+
+  await expect(page.getByText('New sentence')).toBeVisible()
+  await expect(page.getByText(sentences[0].german, { exact: true })).toBeVisible()
+  await expect(page.getByText(sentences[0].english, { exact: true })).toBeVisible()
+  await expect.poll(async () => (await played(page)).at(-1)).toBe(sentences[0].german)
+  await expect(page.getByRole('timer')).toHaveText('60:00')
+
+  // Next card is the second new sentence, then the first comes back as a test once a minute has passed.
+  await page.keyboard.press('Enter')
+  await expect(page.getByText(sentences[1].german, { exact: true })).toBeVisible()
+  await page.clock.fastForward(MIN)
+  await page.keyboard.press('Enter')
+  await expect(page.getByText('Say it, then type it')).toBeVisible()
+  await expect(page.getByText(sentences[0].english, { exact: true })).toBeVisible()
+
+  const input = page.getByPlaceholder('Type the German')
+  await expect(input).toBeFocused()
+  await expect(input).toHaveAttribute('lang', 'de')
+  await expect(input).toHaveAttribute('autocomplete', 'off')
+  await input.fill(sentences[0].german)
+  await page.keyboard.press('Enter')
+  await expect(page.getByRole('status')).toHaveText('Correct')
+  await expect(input).toHaveAttribute('readonly', '')
+
+  const p = await progress(page)
+  expect(p.next).toBe(2)
+  expect(Object.keys(p.cards)).toEqual(['0', '1'])
+  expect(problems).toEqual([])
 })
 
-test('unreadable storage starts with the seed and does not crash', async ({ page }) => {
-  await page.clock.setFixedTime(DAY_ONE)
-  await page.addInitScript(() => {
-    if (!sessionStorage.getItem('seeded')) {
-      localStorage.setItem('satz.v1', '{not json')
-      sessionStorage.setItem('seeded', '1')
-    }
-  })
-  await page.goto('/')
-  await expect(page.getByRole('button', { name: "Practise today's sentences (9)" })).toBeVisible()
+test('a wrong answer is marked word by word and comes back soon', async ({ page }) => {
+  await open(page)
+  const sentences = await course(page)
+  await page.getByRole('button', { name: "Start today's lesson" }).click()
+  await page.keyboard.press('Enter')
+  await expect(page.getByText(sentences[1].german, { exact: true })).toBeVisible()
+  await page.clock.fastForward(MIN)
+  await page.keyboard.press('Enter')
+
+  const words = sentences[0].german.replace(/[.!?]$/, '').split(' ')
+  const wrong = ['Xyz', ...words.slice(1)].join(' ')
+  await page.getByPlaceholder('Type the German').fill(wrong)
+  await page.keyboard.press('Enter')
+  await expect(page.getByRole('status')).toHaveText('Not quite')
+  await expect(page.locator('.text-destructive')).toHaveText('wrong: Xyz')
+  await expect(page.locator('.underline').first()).toContainText(words[0])
+  await page.keyboard.press('Enter')
+
+  const card = (await progress(page)).cards['0']
+  expect(card.lapses + card.reps).toBeGreaterThan(0)
+  expect(card.due - START.getTime()).toBeLessThan(5 * MIN)
 })
 
-test('data survives reload, and export then import restores everything', async ({ page, browser }) => {
+test('capitals and umlauts typed out pass, and the right spelling is shown', async ({ page }) => {
   await open(page)
-  await page.getByRole('tab', { name: 'Add' }).click()
-  await expect(page.getByLabel('German')).toBeFocused()
-  await page.keyboard.type('Das ist neu')
+  const sentences = await course(page)
+  await toFirstTest(page)
+  const typed = sentences[0].german.toLowerCase().replace(/ä/g, 'ae').replace(/ö/g, 'oe').replace(/ü/g, 'ue').replace(/ß/g, 'ss')
+  await page.getByPlaceholder('Type the German').fill(typed)
   await page.keyboard.press('Enter')
-  await page.keyboard.type('This is new')
+  await expect(page.getByRole('status')).toHaveText(/^Correct/)
+})
+
+test('"I was right" accepts my answer from then on', async ({ page }) => {
+  await open(page)
+  await toFirstTest(page)
+  await page.getByPlaceholder('Type the German').fill('Das bin ich gewesen')
   await page.keyboard.press('Enter')
+  await page.keyboard.press('2')
+  expect((await progress(page)).accepted['0']).toEqual(['Das bin ich gewesen'])
+})
+
+test('a whole hour: many new sentences, every one tested, then a summary', async ({ page }) => {
+  test.setTimeout(240_000)
+  const problems = watchConsole(page)
+  await open(page)
+  const byEnglish = new Map((await course(page)).map((s) => [s.english, s.german]))
+  await page.getByRole('button', { name: "Start today's lesson" }).click()
+
+  let cards = 0
+  while (cards < 400) {
+    if (await page.getByText('Lesson done').isVisible()) break
+    await answerCorrectly(page, byEnglish)
+    // About 25 seconds per card, so the hour runs out on the lesson's own clock.
+    await page.clock.fastForward(25_000)
+    cards++
+  }
+  await expect(page.getByText('Lesson done')).toBeVisible()
+  const p = await progress(page)
+  expect(p.lesson).toBeNull()
+  expect(p.history).toHaveLength(1)
+  expect(p.history[0].introduced).toBeGreaterThanOrEqual(20)
+  expect(p.history[0].activeMs).toBeGreaterThanOrEqual(59 * MIN)
+  for (const card of Object.values(p.cards) as { reps: number }[]) expect(card.reps).toBeGreaterThanOrEqual(1)
+
+  await page.getByRole('button', { name: 'Done' }).click()
+  await expect(page.getByRole('button', { name: "Start today's lesson" })).toBeVisible()
+  await expect(page.getByText('Minutes today')).toBeVisible()
+  expect(problems).toEqual([])
+})
+
+test('the clock pauses when away, and a lesson resumes where it stopped', async ({ page }) => {
+  await open(page)
+  await page.getByRole('button', { name: "Start today's lesson" }).click()
+  await next(page)
+  await page.clock.fastForward(30_000)
+  await next(page)
+  // Walk away for 20 minutes without touching anything.
+  await page.clock.fastForward(20 * MIN)
+  await expect(page.getByRole('timer')).toHaveText('Paused')
+  await page.getByRole('button', { name: 'Close' }).click()
+
+  const button = page.getByRole('button', { name: /^Continue lesson/ })
+  await expect(button).toBeVisible()
+  const left = Number((await button.textContent())!.match(/(\d+):\d\d left/)![1])
+  // Only the active minutes count, not the 20 away.
+  expect(left).toBeGreaterThanOrEqual(56)
+  await button.click()
+  await expect(page.getByRole('timer')).not.toHaveText('Paused')
+  expect((await progress(page)).next).toBe(2)
+})
+
+test('a second lesson the same day is allowed after the first one ends', async ({ page }) => {
+  await open(page)
+  const byEnglish = new Map((await course(page)).map((s) => [s.english, s.german]))
+  // A finished lesson earlier today.
+  await page.evaluate((started) => {
+    localStorage.setItem(
+      'satz.v2',
+      JSON.stringify({
+        version: 2,
+        next: 0,
+        cards: {},
+        lesson: null,
+        accepted: {},
+        history: [{ started, ended: started + 3_600_000, activeMs: 3_600_000, introduced: 0, reviewed: 0, firstTryCorrect: 0 }],
+      }),
+    )
+  }, START.getTime() - 5 * 3_600_000)
   await page.reload()
-  await page.getByRole('tab', { name: 'Library' }).click()
-  await expect(page.locator('main li')).toHaveCount(STARTERS + 1)
-  const original = await stored(page)
+  await expect(page.getByText('Minutes today')).toBeVisible()
+  await expect(page.locator('dd').nth(2)).toHaveText('60')
+  await page.getByRole('button', { name: "Start today's lesson" }).click()
+  await answerCorrectly(page, byEnglish)
+  expect((await progress(page)).lesson).not.toBeNull()
+})
+
+test('progress survives reload, and export then import restores it', async ({ page, browser }) => {
+  await open(page)
+  await page.getByRole('button', { name: "Start today's lesson" }).click()
+  await next(page)
+  await next(page)
+  await page.getByRole('button', { name: 'Close' }).click()
+  await page.reload()
+  await expect(page.locator('dd').first()).toHaveText('2')
+  const original = await progress(page)
 
   const downloadPromise = page.waitForEvent('download')
   await page.getByRole('button', { name: 'Export' }).click()
   const download = await downloadPromise
-  expect(download.suggestedFilename()).toBe('satz-backup-2026-10-05.json')
-  const path = test.info().outputPath('backup.json')
+  expect(download.suggestedFilename()).toBe('satz-progress-2026-10-06.json')
+  const path = test.info().outputPath('progress.json')
   await download.saveAs(path)
 
   const fresh = await browser.newContext()
   const other = await fresh.newPage()
-  await other.clock.setFixedTime(DAY_ONE)
+  await other.clock.install({ time: START })
   await other.goto('/')
-  await other.evaluate(() => localStorage.setItem('satz.v1', JSON.stringify({ version: 1, sentences: [] })))
-  await other.reload()
-  await other.getByRole('tab', { name: 'Library' }).click()
   const chooserPromise = other.waitForEvent('filechooser')
   await other.getByRole('button', { name: 'Import' }).click()
   await (await chooserPromise).setFiles(path)
-  await expect(other.getByText('10 sentences imported')).toBeVisible()
-  await expect(other.locator('main li')).toHaveCount(STARTERS + 1)
-
-  const restored = await stored(other)
-  const sort = (list: { id: string }[]) => [...list].sort((a, b) => a.id.localeCompare(b.id))
-  expect(sort(restored.sentences)).toEqual(sort(original.sentences))
+  await expect(other.getByText('Progress restored')).toBeVisible()
+  await expect(other.locator('dd').first()).toHaveText('2')
+  expect(await progress(other)).toEqual(original)
   await fresh.close()
 })
 
@@ -372,18 +277,14 @@ test('usable at 360px wide in dark mode', async ({ page }) => {
   await open(page)
   const bg = await page.evaluate(() => getComputedStyle(document.body).backgroundColor)
   expect(bg).not.toBe('rgb(255, 255, 255)')
-  for (const tab of ['Today', 'Add', 'Library']) {
-    await page.getByRole('tab', { name: tab }).click()
-    const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)
-    expect(overflow).toBeLessThanOrEqual(0)
-  }
-  await page.getByRole('tab', { name: 'Today' }).click()
-  await page.getByRole('button', { name: /Practise/ }).click()
-  await page.keyboard.type('Ich bin mir nicht so sicher wie du denkst')
+  const overflow = () => page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)
+  expect(await overflow()).toBeLessThanOrEqual(0)
+  await toFirstTest(page)
+  expect(await overflow()).toBeLessThanOrEqual(0)
+  await page.getByPlaceholder('Type the German').fill('Ich bin mir nicht so sicher wie du denkst')
   await page.keyboard.press('Enter')
-  const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)
-  expect(overflow).toBeLessThanOrEqual(0)
-  const minHeight = await page.getByRole('button', { name: /Got it/ }).evaluate((el) => el.getBoundingClientRect().height)
-  expect(minHeight).toBeGreaterThanOrEqual(44)
+  expect(await overflow()).toBeLessThanOrEqual(0)
+  const height = await page.getByRole('button', { name: /Continue/ }).evaluate((el) => el.getBoundingClientRect().height)
+  expect(height).toBeGreaterThanOrEqual(44)
   expect(problems).toEqual([])
 })

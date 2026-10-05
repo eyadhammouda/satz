@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { diffWords, isExactMatch, normalise } from './check'
+import { checkAnswer, diffWords, isExactMatch, normalise } from './check'
 
 describe('normalise', () => {
   it('converts to NFC', () => {
@@ -77,5 +77,25 @@ describe('diffWords', () => {
     const d = diffWords('Es wird morgen regnen vielleicht', 'Es wird heute wahrscheinlich regnen')
     expect(d.answer.map((w) => w.text).join(' ')).toBe('Es wird morgen regnen vielleicht')
     expect(d.target.map((w) => w.text).join(' ')).toBe('Es wird heute wahrscheinlich regnen')
+  })
+})
+
+describe('checkAnswer', () => {
+  const accepted = ['Ich brauche dich.', 'Ich brauche Sie.', 'Ich brauche euch.']
+
+  it('accepts any accepted sentence exactly', () => {
+    expect(checkAnswer('Ich brauche Sie', accepted)).toEqual({ verdict: 'exact', target: 'Ich brauche Sie.' })
+  })
+
+  it('treats capitals, umlauts typed out and commas as close', () => {
+    expect(checkAnswer('ich brauche dich', accepted).verdict).toBe('close')
+    expect(checkAnswer('Muesst ihr gehen', ['Müsst ihr gehen?']).verdict).toBe('close')
+    expect(checkAnswer('Ja ich komme', ['Ja, ich komme.']).verdict).toBe('close')
+    expect(checkAnswer('Das ist gross', ['Das ist groß.']).verdict).toBe('close')
+  })
+
+  it('marks a wrong word as wrong and diffs against the closest answer', () => {
+    expect(checkAnswer('Ich brauche ihn', accepted)).toEqual({ verdict: 'wrong', target: 'Ich brauche dich.' })
+    expect(checkAnswer('Wir sind euch', accepted).target).toBe('Ich brauche euch.')
   })
 })

@@ -61,3 +61,38 @@ export function diffWords(answer: string, target: string): WordDiff {
   while (j < b.length) result.target.push({ text: b[j++], marked: true })
   return result
 }
+
+/** Folds what a missing German keyboard or a capitals slip changes: ae for ä, ss for ß, and case. */
+export function fold(text: string): string {
+  return normalise(text)
+    .toLowerCase()
+    .replace(/ä/g, 'ae')
+    .replace(/ö/g, 'oe')
+    .replace(/ü/g, 'ue')
+    .replace(/ß/g, 'ss')
+    .replace(/[,;:]/g, '')
+    .replace(/\s+/g, ' ')
+}
+
+export type Verdict = 'exact' | 'close' | 'wrong'
+
+export interface Checked {
+  verdict: Verdict
+  /** The accepted answer closest to what was typed, used for the word diff. */
+  target: string
+}
+
+const overlap = (answer: string, target: string) => diffWords(answer, target).target.filter((w) => !w.marked).length
+
+/**
+ * Checks an answer against every accepted German sentence.
+ * exact: right, word for word. close: right apart from capitals, umlauts typed as ae, oe, ue, ss, or commas.
+ */
+export function checkAnswer(answer: string, accepted: string[]): Checked {
+  const exact = accepted.find((t) => isExactMatch(answer, t))
+  if (exact) return { verdict: 'exact', target: exact }
+  const close = accepted.find((t) => fold(answer) === fold(t))
+  if (close) return { verdict: 'close', target: close }
+  const best = accepted.reduce((a, b) => (overlap(answer, b) > overlap(answer, a) ? b : a), accepted[0] ?? '')
+  return { verdict: 'wrong', target: best }
+}
