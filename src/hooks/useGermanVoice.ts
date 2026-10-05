@@ -15,9 +15,15 @@ function findGermanVoice(): SpeechSynthesisVoice | null {
 export const speechUrl = (text: string) =>
   `/api/speak?text=${encodeURIComponent(text.normalize('NFC').trim())}&voice=austrian`
 
+/** Pause between the two readings of a new sentence. */
+export const REPEAT_GAP_MS = 1000
+
 export interface Voice {
-  /** Reads German aloud. Starts again from the beginning if something is already playing. */
-  speak: (text: string) => void
+  /**
+   * Reads German aloud, `times` times with a short pause between. Anything already
+   * playing stops, and so does a repeat still waiting to start.
+   */
+  speak: (text: string, times?: number) => void
   /** The text being read aloud, or null. */
   playing: string | null
 }
@@ -41,6 +47,7 @@ export function useGermanVoice(): Voice | null {
   const audioRef = useRef<HTMLAudioElement | null>(null)
   // Counts requests, so events from an earlier one are ignored.
   const requestRef = useRef(0)
+  const repeatRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   useEffect(() => {
     const hasSynth = 'speechSynthesis' in window
@@ -52,39 +59,45 @@ export function useGermanVoice(): Voice | null {
         window.speechSynthesis.cancel()
       }
       audioRef.current?.pause()
+      if (repeatRef.current) clearTimeout(repeatRef.current)
     }
   }, [])
 
-  const finish = useCallback((request: number) => {
-    if (requestRef.current === request) setPlaying(null)
+  // Called when a reading ends. Plays the next reading after a pause, or clears `playing`.
+  const finish = useCallback((request: number, again?: () => void) => {
+    if (requestRef.current !== request) return
+    if (!again) {
+      setPlaying(null)
+      return
+    }
+    repeatRef.current = setTimeout(() => {
+      repeatRef.current = null
+      if (requestRef.current === request) again()
+    }, REPEAT_GAP_MS)
   }, [])
 
   const speakWithBrowser = useCallback(
-    (text: string, request: number) => {
+    function readAloud(text: string, request: number, times: number) {
       if (!browserVoice) {
         finish(request)
         return
       }
+      const again = times > 1 ? () => readAloud(text, request, times - 1) : undefined
       const utterance = new SpeechSynthesisUtterance(text)
       utterance.voice = browserVoice
       utterance.lang = 'de-DE'
       utterance.rate = 0.95
-      utterance.addEventListener('end', () => finish(request))
+      utterance.addEventListener('end', () => finish(request, again))
       utterance.addEventListener('error', () => finish(request))
       window.speechSynthesis.speak(utterance)
     },
     [browserVoice, finish],
   )
 
-  const speak = useCallback(
-    (text: string) => {
-      const request = ++requestRef.current
-      audioRef.current?.pause()
-      audioRef.current = null
-      if ('speechSynthesis' in window) window.speechSynthesis.cancel()
-      setPlaying(text)
+  const play = useCallback(
+    function playOnce(text: string, request: number, times: number) {
       if (!serverAvailable) {
-        speakWithBrowser(text, request)
+        speakWithBrowser(text, request, times)
         return
       }
       const audio = new Audio(speechUrl(text))
@@ -92,9 +105,10 @@ export function useGermanVoice(): Voice | null {
       const fallBack = () => {
         if (requestRef.current !== request) return
         setServerAvailable(false)
-        speakWithBrowser(text, request)
+        speakWithBrowser(text, request, times)
       }
-      audio.addEventListener('ended', () => finish(request), { once: true })
+      const again = times > 1 ? () => playOnce(text, request, times - 1) : undefined
+      audio.addEventListener('ended', () => finish(request, again), { once: true })
       audio.addEventListener('error', fallBack, { once: true })
       audio.play().catch((error: unknown) => {
         // A blocked autoplay is not a missing voice. Anything else falls back.
@@ -103,6 +117,20 @@ export function useGermanVoice(): Voice | null {
       })
     },
     [serverAvailable, speakWithBrowser, finish],
+  )
+
+  const speak = useCallback(
+    (text: string, times = 1) => {
+      const request = ++requestRef.current
+      if (repeatRef.current) clearTimeout(repeatRef.current)
+      repeatRef.current = null
+      audioRef.current?.pause()
+      audioRef.current = null
+      if ('speechSynthesis' in window) window.speechSynthesis.cancel()
+      setPlaying(text)
+      play(text, request, Math.max(1, times))
+    },
+    [play],
   )
 
   const canSpeak = serverAvailable || browserVoice !== null
