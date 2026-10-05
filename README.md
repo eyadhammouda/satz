@@ -3,26 +3,15 @@
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="docs/desktop-dark.png">
-    <img src="docs/desktop-light.png" alt="Satz on a MacBook, marking Tomaten where the Austrian answer is Paradeiser" width="820">
+    <img src="docs/desktop-light.png" alt="Review in Safari, marking Hallo where the Austrian answer is Servus" width="640">
+  </picture>
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/phone-dark.png">
+    <img src="docs/phone-light.png" alt="Library on an iPhone, each sentence with a listen button" width="190">
   </picture>
 </p>
 
-<p align="center">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="docs/today-dark.png">
-    <img src="docs/today-light.png" alt="Today screen with 12 sentences due" width="260">
-  </picture>
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="docs/review-dark.png">
-    <img src="docs/review-light.png" alt="Review screen marking a wrong word" width="260">
-  </picture>
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="docs/library-dark.png">
-    <img src="docs/library-light.png" alt="Library with every sentence, when it is due, and a listen button" width="260">
-  </picture>
-</p>
-
-Servus! Satz is a quiet web app for memorising German sentences, the Austrian way. See the English, type the German from memory, hear it read aloud in an Austrian voice, and let spaced review bring each sentence back before you forget it. Paradeiser, not Tomaten.
+Servus! Satz is a quiet web app for memorising German sentences, the Austrian way. See the English, type the German from memory, hear it in an Austrian voice, and let spaced review bring each sentence back before you forget it.
 
 Live at [satz-app.vercel.app](https://satz-app.vercel.app). Private: only the owner can sign in.
 
@@ -57,7 +46,7 @@ npm run test:e2e
 npm run screenshots
 ```
 
-Fills the app with Austrian example sentences and writes every image in `docs/`, including the MacBook shot.
+Screenshots the app with a few Austrian sentences and frames them with [cutaway](https://github.com/half144/cutaway) on a macOS wallpaper. Needs Node 22 and cutaway in `~/.cutaway`.
 
 ## License
 
