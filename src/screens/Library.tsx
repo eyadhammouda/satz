@@ -132,6 +132,11 @@ export default function Library({ sentences, today, onUpdate, onDelete, onImport
         <Button variant="ghost" size="sm" className="text-muted-foreground" onClick={() => fileRef.current?.click()}>
           Import
         </Button>
+        <form method="post" action="/api/auth/logout">
+          <Button type="submit" variant="ghost" size="sm" className="text-muted-foreground">
+            Sign out
+          </Button>
+        </form>
         <input
           ref={fileRef}
           type="file"
