@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent } from 'react'
 import { X } from 'lucide-react'
 import { toast } from 'sonner'
+import { ListenButton } from '@/components/ListenButton'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -69,23 +70,27 @@ export default function Add({ sentences, today, onAdd, onDelete }: Props) {
       <form onSubmit={save} className="flex flex-col gap-5" noValidate>
         <div className="flex flex-col gap-2">
           <Label htmlFor="add-german">German</Label>
-          <Input
-            ref={germanRef}
-            id="add-german"
-            lang="de"
-            autoComplete="off"
-            autoCorrect="off"
-            autoCapitalize="sentences"
-            spellCheck={false}
-            enterKeyHint="next"
-            value={german}
-            aria-invalid={invalid === 'german' || undefined}
-            onChange={(e) => {
-              setGerman(e.target.value)
-              if (invalid === 'german') setInvalid(null)
-            }}
-            onKeyDown={onGermanKeyDown}
-          />
+          <div className="relative">
+            <Input
+              ref={germanRef}
+              id="add-german"
+              lang="de"
+              autoComplete="off"
+              autoCorrect="off"
+              autoCapitalize="sentences"
+              spellCheck={false}
+              enterKeyHint="next"
+              value={german}
+              aria-invalid={invalid === 'german' || undefined}
+              onChange={(e) => {
+                setGerman(e.target.value)
+                if (invalid === 'german') setInvalid(null)
+              }}
+              onKeyDown={onGermanKeyDown}
+              className="pr-11"
+            />
+            <ListenButton text={german} className="absolute top-1/2 right-1.5 -translate-y-1/2" />
+          </div>
         </div>
         <div className="flex flex-col gap-2">
           <Label htmlFor="add-english">English</Label>
@@ -113,13 +118,14 @@ export default function Add({ sentences, today, onAdd, onDelete }: Props) {
           <h2 className="text-[13px] text-muted-foreground">Added today ({addedToday.length})</h2>
           <ul className="mt-2 divide-y">
             {addedToday.map((s) => (
-              <li key={s.id} className="row flex items-center gap-3 py-3">
-                <div className="min-w-0 flex-1">
+              <li key={s.id} className="row flex items-center gap-1 py-3">
+                <div className="min-w-0 flex-1 pr-2">
                   <p lang="de" className="text-[15px] break-words">
                     {s.german}
                   </p>
                   <p className="text-[13px] break-words text-muted-foreground">{s.english}</p>
                 </div>
+                <ListenButton text={s.german} />
                 <Button
                   variant="ghost"
                   size="icon-sm"

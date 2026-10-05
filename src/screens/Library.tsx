@@ -12,6 +12,7 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog'
+import { ListenButton } from '@/components/ListenButton'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
@@ -100,11 +101,14 @@ export default function Library({ sentences, today, onUpdate, onDelete, onImport
       {results.length > 0 ? (
         <ul className="mt-2 -mx-3">
           {results.map((s) => (
-            <li key={s.id} className="row">
+            <li
+              key={s.id}
+              className="row flex items-center rounded-lg transition-colors duration-150 [@media(hover:hover)]:hover:bg-muted/60"
+            >
               <button
                 type="button"
                 onClick={() => setEditingId(s.id)}
-                className="flex w-full items-center gap-4 rounded-lg px-3 py-3 text-left outline-none transition-colors duration-150 focus-visible:ring-3 focus-visible:ring-ring/50 [@media(hover:hover)]:hover:bg-muted/60"
+                className="flex min-w-0 flex-1 items-center gap-4 rounded-lg py-3 pl-3 text-left outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
               >
                 <span className="min-w-0 flex-1">
                   <span lang="de" className="block text-[15px] break-words">
@@ -116,6 +120,7 @@ export default function Library({ sentences, today, onUpdate, onDelete, onImport
                   {dueLabel(s.dueDay, today)}
                 </span>
               </button>
+              <ListenButton text={s.german} className="mx-1.5" />
             </li>
           ))}
         </ul>
@@ -221,16 +226,20 @@ function EditForm({
       </DialogHeader>
       <div className="flex flex-col gap-2">
         <Label htmlFor="edit-german">German</Label>
-        <Input
-          id="edit-german"
-          lang="de"
-          autoComplete="off"
-          autoCorrect="off"
-          spellCheck={false}
-          value={german}
-          aria-invalid={!german.trim() || undefined}
-          onChange={(e) => setGerman(e.target.value)}
-        />
+        <div className="relative">
+          <Input
+            id="edit-german"
+            lang="de"
+            autoComplete="off"
+            autoCorrect="off"
+            spellCheck={false}
+            value={german}
+            aria-invalid={!german.trim() || undefined}
+            onChange={(e) => setGerman(e.target.value)}
+            className="pr-11"
+          />
+          <ListenButton text={german} className="absolute top-1/2 right-1.5 -translate-y-1/2" />
+        </div>
       </div>
       <div className="flex flex-col gap-2">
         <Label htmlFor="edit-english">English</Label>
