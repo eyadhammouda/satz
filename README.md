@@ -2,12 +2,26 @@
 
 <p align="center">
   <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="docs/desktop-dark.png">
-    <img src="docs/desktop-light.png" alt="Review in Safari, marking Hallo where the Austrian answer is Servus" width="640">
+    <source media="(prefers-color-scheme: dark)" srcset="docs/desktop-review-dark.png">
+    <img src="docs/desktop-review-light.png" alt="Review in Safari, marking Hallo where the Austrian answer is Servus" width="820">
+  </picture>
+</p>
+
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/desktop-today-dark.png">
+    <img src="docs/desktop-today-light.png" alt="Today in Safari, with 6 sentences due" width="405">
   </picture>
   <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="docs/phone-dark.png">
-    <img src="docs/phone-light.png" alt="Library on an iPhone, each sentence with a listen button" width="190">
+    <source media="(prefers-color-scheme: dark)" srcset="docs/desktop-library-dark.png">
+    <img src="docs/desktop-library-light.png" alt="Library in Safari, each sentence with a listen button" width="405">
+  </picture>
+</p>
+
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/phones-dark.png">
+    <img src="docs/phones-light.png" alt="Three iPhones: Today, a review, and adding a sentence with a listen button" width="820">
   </picture>
 </p>
 
