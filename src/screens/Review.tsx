@@ -1,9 +1,9 @@
 import { useEffect, useEffectEvent, useRef, useState } from 'react'
-import { Volume2, X } from 'lucide-react'
+import { X } from 'lucide-react'
+import { ListenButton } from '@/components/ListenButton'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Progress } from '@/components/ui/progress'
-import { useGermanVoice } from '@/hooks/useGermanVoice'
 import { diffWords, isExactMatch, type DiffWord } from '@/lib/check'
 import {
   answer,
@@ -38,7 +38,6 @@ export default function Review({ mode, ids, sentences, onGrade, onClose }: Props
   const [input, setInput] = useState('')
   const [checkedInput, setCheckedInput] = useState('')
   const inputRef = useRef<HTMLInputElement>(null)
-  const speak = useGermanVoice()
 
   // Keep the card text even if the sentence is edited or deleted in another tab.
   const [cards] = useState(() => new Map(sentences.filter((s) => ids.includes(s.id)).map((s) => [s.id, s])))
@@ -184,17 +183,7 @@ export default function Review({ mode, ids, sentences, onGrade, onClose }: Props
                 <p lang="de" className="flex-1 text-[26px] leading-[1.25] font-medium tracking-[-0.015em] text-balance">
                   {diff ? <Words words={diff.target} kind="missing" /> : card.german}
                 </p>
-                {speak && (
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="-mt-1.5 -mr-3 text-muted-foreground"
-                    aria-label="Read aloud"
-                    onClick={() => speak(card.german)}
-                  >
-                    <Volume2 className="size-5" />
-                  </Button>
-                )}
+                <ListenButton text={card.german} size="icon" className="-mt-1.5 -mr-3" />
               </div>
 
               {diff && (

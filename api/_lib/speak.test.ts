@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { GET, MAX_LENGTH, resetVoiceForTests } from '../speak.js'
+import { AUSTRIAN_VOICE_ID, GET, MAX_LENGTH } from '../speak.js'
 import { createSession, readSessionConfig, SESSION_COOKIE } from './auth.js'
 
 const env = {
@@ -14,7 +14,6 @@ beforeEach(() => Object.assign(process.env, env))
 afterEach(() => {
   process.env = { ...saved }
   vi.unstubAllGlobals()
-  resetVoiceForTests()
 })
 
 async function request(text: string | null, signedIn = true) {
@@ -25,10 +24,9 @@ async function request(text: string | null, signedIn = true) {
   return GET(new Request(url, { headers }))
 }
 
-function fakeElevenLabs(status = 200, voices: unknown[] = []) {
+function fakeElevenLabs(status = 200) {
   const calls: { url: string; init: RequestInit }[] = []
   vi.stubGlobal('fetch', async (url: string, init: RequestInit) => {
-    if (url.startsWith('https://api.elevenlabs.io/v2/voices')) return Response.json({ voices })
     calls.push({ url, init })
     return status === 200
       ? new Response(new Uint8Array([1, 2, 3]), { headers: { 'Content-Type': 'audio/mpeg' } })
@@ -65,32 +63,19 @@ describe('/api/speak', () => {
     expect(calls).toHaveLength(0)
   })
 
-  it('picks a German voice from the account when none is set', async () => {
+  it('uses the Austrian voice when none is set', async () => {
     delete process.env.ELEVENLABS_VOICE_ID
-    const calls = fakeElevenLabs(200, [
-      { voice_id: 'premade-en', category: 'premade', verified_languages: [{ language: 'en' }] },
-      { voice_id: 'german', category: 'professional', verified_languages: [{ language: 'en' }, { language: 'de' }] },
-    ])
+    const calls = fakeElevenLabs()
     expect((await request('Hallo')).status).toBe(200)
-    expect(calls[0].url).toContain('/text-to-speech/german?')
+    expect(calls).toHaveLength(1)
+    expect(calls[0].url).toContain(`/text-to-speech/${AUSTRIAN_VOICE_ID}?`)
   })
 
-  it('falls back to a premade voice when no German one exists', async () => {
-    delete process.env.ELEVENLABS_VOICE_ID
-    const calls = fakeElevenLabs(200, [
-      { voice_id: 'cloned', category: 'cloned' },
-      { voice_id: 'premade-1', category: 'premade' },
-    ])
-    await request('Hallo')
-    expect(calls[0].url).toContain('/text-to-speech/premade-1?')
-  })
-
-  it('reports 503 when the key is missing or no voice exists, so the app falls back to the browser voice', async () => {
-    delete process.env.ELEVENLABS_VOICE_ID
-    fakeElevenLabs(200, [])
-    expect((await request('Hallo')).status).toBe(503)
+  it('reports 503 when the key is missing, so the app falls back to the browser voice', async () => {
     delete process.env.ELEVENLABS_API_KEY
+    const calls = fakeElevenLabs()
     expect((await request('Hallo')).status).toBe(503)
+    expect(calls).toHaveLength(0)
   })
 
   it('reports 502 when ElevenLabs fails', async () => {

@@ -218,7 +218,7 @@ test('library search, edit and delete', async ({ page }) => {
   await expect(page.locator('main li')).toHaveCount(1)
 
   const before = (await stored(page)).sentences.find((s: { german: string }) => s.german.includes('Linz'))
-  await page.locator('main li button').first().click()
+  await page.locator('main li button').first().click() // the row, not its Listen button
   const dialog = page.getByRole('dialog')
   await dialog.getByLabel('German').fill('In Linz hat es gestern geschneit')
   await dialog.getByRole('button', { name: 'Save' }).click()
@@ -226,7 +226,7 @@ test('library search, edit and delete', async ({ page }) => {
   const after = (await stored(page)).sentences.find((s: { id: string }) => s.id === before.id)
   expect(after).toEqual({ ...before, german: 'In Linz hat es gestern geschneit' })
 
-  await page.locator('main li button').first().click()
+  await page.locator('main li button').first().click() // the row, not its Listen button
   await page.getByRole('dialog').getByRole('button', { name: 'Delete' }).click()
   await page.getByRole('alertdialog').getByRole('button', { name: 'Cancel' }).click()
   await expect(page.getByRole('dialog').getByRole('button', { name: 'Delete' })).toBeFocused()
@@ -234,6 +234,75 @@ test('library search, edit and delete', async ({ page }) => {
   await page.getByRole('alertdialog').getByRole('button', { name: 'Delete' }).click()
   await page.getByRole('searchbox', { name: 'Search' }).fill('')
   await expect(page.locator('main li')).toHaveCount(STARTERS - 1)
+})
+
+test('listen is one click away in add, library, edit and review', async ({ page }) => {
+  const problems = watchConsole(page)
+  // Record what would play. The preview server has no /api/speak, so after the first
+  // sentence the app falls back to the browser voice: record both.
+  await page.addInitScript(() => {
+    const played: string[] = []
+    Object.assign(window, { played })
+    HTMLMediaElement.prototype.play = function () {
+      played.push(new URL(this.src).searchParams.get('text') ?? '')
+      return Promise.resolve()
+    }
+    const fakeVoice = { lang: 'de-DE', localService: true, name: 'Test', voiceURI: 'test', default: true }
+    speechSynthesis.getVoices = () => [fakeVoice as SpeechSynthesisVoice]
+    // The real setter only accepts real voices.
+    Object.defineProperty(SpeechSynthesisUtterance.prototype, 'voice', { set() {}, get: () => null })
+    speechSynthesis.speak = (utterance) => {
+      played.push(utterance.text)
+    }
+  })
+  await open(page)
+  const spoken = () => page.evaluate(() => (window as unknown as { played: string[] }).played)
+  const listened = async (text: string) => {
+    await expect.poll(async () => (await spoken()).at(-1)).toBe(text)
+  }
+
+  // While typing: the German field keeps focus after listening.
+  await page.getByRole('tab', { name: 'Add' }).click()
+  const german = page.getByLabel('German')
+  const fieldListen = page.locator('form').getByRole('button', { name: 'Listen' })
+  await expect(fieldListen).toHaveCount(0)
+  await german.fill('Wie geht es dir')
+  await german.focus()
+  await fieldListen.click()
+  await listened('Wie geht es dir')
+  await expect(german).toBeFocused()
+
+  // Added today rows.
+  await page.keyboard.press('Enter')
+  await page.keyboard.type('How are you')
+  await page.keyboard.press('Enter')
+  await page.locator('main li').first().getByRole('button', { name: 'Listen' }).click()
+  await listened('Wie geht es dir')
+
+  // Library rows play without opening the dialog.
+  await page.getByRole('tab', { name: 'Library' }).click()
+  const row = page.locator('main li').filter({ hasText: 'Linz' })
+  const text = (await row.locator('[lang="de"]').textContent()) ?? ''
+  await row.getByRole('button', { name: 'Listen' }).click()
+  await listened(text)
+  await expect(page.getByRole('dialog')).toHaveCount(0)
+
+  // The edit dialog reads the text as it is being edited.
+  await row.locator('button').first().click()
+  const dialog = page.getByRole('dialog')
+  await dialog.getByLabel('German').fill('In Linz schneit es')
+  await dialog.getByRole('button', { name: 'Listen' }).click()
+  await listened('In Linz schneit es')
+  await page.keyboard.press('Escape')
+
+  // Review answers.
+  await page.getByRole('tab', { name: 'Today' }).click()
+  await page.getByRole('button', { name: /Practise/ }).click()
+  await page.keyboard.press('Enter')
+  const answer = (await page.locator('main p[lang="de"]').first().textContent()) ?? ''
+  await page.getByRole('button', { name: 'Listen' }).click()
+  await listened(answer)
+  expect(problems).toEqual([])
 })
 
 test('an emptied library stays empty after reload', async ({ page }) => {

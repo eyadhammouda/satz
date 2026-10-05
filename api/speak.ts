@@ -10,8 +10,7 @@ export async function GET(request: Request): Promise<Response> {
 
   const apiKey = process.env.ELEVENLABS_API_KEY
   if (!apiKey) return text('Speech is not set up', 503)
-  const voiceId = await resolveVoiceId(apiKey)
-  if (!voiceId) return text('No voice available', 503)
+  const voiceId = resolveVoiceId()
 
   const sentence = new URL(request.url).searchParams.get('text')?.normalize('NFC').trim() ?? ''
   if (!sentence || sentence.length > MAX_LENGTH) return text('Bad request', 400)
@@ -42,36 +41,11 @@ export async function GET(request: Request): Promise<Response> {
   })
 }
 
-interface Voice {
-  voice_id: string
-  category?: string
-  verified_languages?: { language?: string }[]
-}
+/** Chris, an Austrian German voice from the ElevenLabs voice library. */
+export const AUSTRIAN_VOICE_ID = 'l4QW1L3S9K8vu4mB7I0i'
 
-let chosenVoice: Promise<string | null> | undefined
-
-/** ELEVENLABS_VOICE_ID when set, otherwise the first voice on the account verified for German, otherwise a premade voice. */
-export function resolveVoiceId(apiKey: string): Promise<string | null> {
-  const configured = process.env.ELEVENLABS_VOICE_ID
-  if (configured) return Promise.resolve(configured)
-  chosenVoice ??= fetch('https://api.elevenlabs.io/v2/voices?page_size=100', { headers: { 'xi-api-key': apiKey } })
-    .then(async (response) => {
-      if (!response.ok) return null
-      const { voices } = (await response.json()) as { voices: Voice[] }
-      const german = voices.find((v) => v.verified_languages?.some((l) => l.language === 'de'))
-      return (german ?? voices.find((v) => v.category === 'premade') ?? voices[0])?.voice_id ?? null
-    })
-    .catch(() => null)
-    .then((id) => {
-      if (!id) chosenVoice = undefined
-      return id
-    })
-  return chosenVoice
-}
-
-export function resetVoiceForTests() {
-  chosenVoice = undefined
-}
+/** ELEVENLABS_VOICE_ID when set, otherwise the Austrian voice. */
+export const resolveVoiceId = () => process.env.ELEVENLABS_VOICE_ID || AUSTRIAN_VOICE_ID
 
 function text(body: string, status: number): Response {
   return new Response(body, { status, headers: { 'Content-Type': 'text/plain', 'Cache-Control': 'no-store' } })

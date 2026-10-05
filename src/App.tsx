@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Toaster } from '@/components/ui/sonner'
+import { useGermanVoice, VoiceContext } from '@/hooks/useGermanVoice'
 import { useSentences, useStudyDay } from '@/hooks/useSentences'
 import { isDue, shuffle } from '@/lib/schedule'
 import Add from '@/screens/Add'
@@ -20,6 +21,7 @@ export default function App() {
   const today = useStudyDay()
   const [tab, setTab] = useState<Tab>('today')
   const [review, setReview] = useState<ReviewSession | null>(null)
+  const voice = useGermanVoice()
 
   const startReview = () => {
     const due = store.sentences
@@ -34,7 +36,7 @@ export default function App() {
   }
 
   return (
-    <>
+    <VoiceContext value={voice}>
       {review ? (
         <Review
           key={review.ids.join()}
@@ -83,6 +85,6 @@ export default function App() {
         </div>
       )}
       <Toaster />
-    </>
+    </VoiceContext>
   )
 }
