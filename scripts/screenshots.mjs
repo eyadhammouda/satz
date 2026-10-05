@@ -1,5 +1,5 @@
 // Writes the README screenshots to docs/, light and dark, all on the macOS Sonoma wallpaper:
-// three desktop shots in a Safari window (Today, Review, Library) and three iPhones side by side.
+// three desktop shots in a Safari window (home, a new sentence, a test) and three iPhones side by side.
 // The framing is cutaway's (https://github.com/half144/cutaway): its frame command for the windows,
 // and its phone drawing for the row of phones.
 // Needs cutaway in ~/.cutaway (or CUTAWAY_DIR) and Node 22. Run with: npm run screenshots
@@ -29,56 +29,60 @@ const PHONE_VIEWPORT = {
   height: PHONE.screen.height - PHONE.insets.top - PHONE.insets.bottom,
 }
 
-// [german, english, days until due]
-const SENTENCES = [
-  ['Servus!', 'Hi!', 0],
-  ['Grüß Gott', 'Hello', 0],
-  ['Baba!', 'Bye!', 0],
-  ['Eine Melange, bitte', 'A melange, please', 0],
-  ['Wo ist die Bim?', 'Where is the tram?', 0],
-  ['Das Sackerl, bitte', 'The bag, please', 0],
-  ['Ich hab Hunger', "I'm hungry", 1],
-  ['Bis morgen!', 'See you tomorrow!', 3],
-]
-// The first review card, answered in standard German instead of Austrian.
-const WRONG_ANSWER = 'Hallo!'
-
-const day = (offset) => new Date(Date.UTC(2026, 9, 5) + offset * 86_400_000).toISOString().slice(0, 10)
+// A learner a couple of weeks in: 300 sentences learned, a lesson open with 38 minutes to go.
+const DAY = 86_400_000
 const stored = JSON.stringify({
-  version: 1,
-  sentences: SENTENCES.map(([german, english, due], i) => ({
-    id: `demo-${i}`,
-    german,
-    english,
-    createdDay: day(-20 + i),
-    box: 2,
-    dueDay: day(due),
-    lastReviewedDay: day(-3),
-    correct: 2,
-    missed: 0,
-  })),
+  version: 2,
+  next: 300,
+  cards: Object.fromEntries(
+    Array.from({ length: 300 }, (_, i) => [
+      i,
+      {
+        due: NOW.getTime() + (i < 260 ? (i % 20) * DAY : -DAY),
+        stability: 8,
+        difficulty: 5,
+        elapsed_days: 3,
+        scheduled_days: 8,
+        learning_steps: 0,
+        reps: 4,
+        lapses: 0,
+        state: 2,
+        last_review: NOW.getTime() - 3 * DAY,
+        introduced: NOW.getTime() - 14 * DAY,
+      },
+    ]),
+  ),
+  lesson: null,
+  accepted: {},
+  history: [{ started: NOW.getTime() - 3 * 3_600_000, ended: NOW.getTime() - 2 * 3_600_000, activeMs: 22 * 60_000, introduced: 9, reviewed: 41, firstTryCorrect: 33 }],
 })
+// What to type for the test card, so one word shows as wrong.
+const wrong = (german) => german.replace(/^(\S+)/, (first) => (first === 'Ich' ? 'Du' : 'Ich'))
 
 const screens = {
-  today: async () => {},
-  // Review with a wrong answer, so the marked word shows.
-  review: async (page) => {
-    await page.getByRole('button', { name: 'Start review' }).click()
-    await page.keyboard.type(WRONG_ANSWER)
+  home: async () => {},
+  // A new sentence, shown with its audio before it is tested.
+  intro: async (page) => {
+    await page.getByRole('button', { name: /lesson/ }).click()
+    await page.getByText('New sentence').waitFor()
+  },
+  // A test with one wrong word marked.
+  test: async (page) => {
+    await page.getByRole('button', { name: /lesson/ }).click()
+    await page.getByText('Review').waitFor()
+    const english = await page.locator('main > p').nth(1).textContent()
+    const german = await page.evaluate(async (en) => {
+      const rows = await (await fetch('/sentences/000.json')).json()
+      return rows.find((r) => r[2] === en)?.[1] ?? ''
+    }, english)
+    await page.getByPlaceholder('Type the German').fill(wrong(german))
     await page.keyboard.press('Enter')
-    await page.getByRole('button', { name: /Got it/ }).waitFor()
-  },
-  library: async (page) => {
-    await page.getByRole('tab', { name: 'Library' }).click()
-  },
-  // Typing a new sentence, with the listen button in the field.
-  add: async (page) => {
-    await page.getByRole('tab', { name: 'Add' }).click()
-    await page.getByLabel('German').fill('Gemma auf an Kaffee?')
-    await page.getByLabel('English').fill('Shall we go for a coffee?')
-    await page.getByLabel('German').focus()
+    await page.getByRole('status').waitFor()
   },
 }
+
+// A first lesson starts with a new sentence; the others open with reviews.
+const FRESH = new Set(['intro'])
 
 async function screenshot(browser, { scheme, phone, screen }) {
   const context = await browser.newContext({
@@ -88,10 +92,14 @@ async function screenshot(browser, { scheme, phone, screen }) {
       : { viewport: { width: 1440, height: 810 }, deviceScaleFactor: 2 }),
   })
   const page = await context.newPage()
-  await page.clock.setFixedTime(NOW)
-  await page.addInitScript((data) => localStorage.setItem('satz.v1', data), stored)
+  await page.clock.install({ time: NOW })
+  if (!FRESH.has(screen)) await page.addInitScript((data) => localStorage.setItem('satz.v2', data), stored)
+  await page.addInitScript(() => {
+    HTMLMediaElement.prototype.play = () => Promise.resolve()
+  })
   await page.goto(`http://localhost:${PORT}`)
-  await page.getByRole('tab', { name: 'Today' }).waitFor()
+  await page.getByRole('button', { name: /lesson/ }).waitFor({ state: 'visible' })
+  await page.waitForFunction(() => !document.querySelector('button[disabled]'))
   await screens[screen](page)
   await page.waitForTimeout(300)
   const png = await page.screenshot()
@@ -164,13 +172,13 @@ const browser = await chromium.launch(
 const raw = await mkdtemp(join(tmpdir(), 'satz-shots-'))
 try {
   for (const scheme of ['light', 'dark']) {
-    for (const screen of ['today', 'review', 'library']) {
+    for (const screen of ['home', 'intro', 'test']) {
       const input = join(raw, `${screen}-${scheme}.png`)
       await writeFile(input, await screenshot(browser, { scheme, phone: false, screen }))
       frameWindow(input, `docs/desktop-${screen}-${scheme}.png`)
     }
     const phones = []
-    for (const screen of ['today', 'review', 'add']) phones.push(await screenshot(browser, { scheme, phone: true, screen }))
+    for (const screen of ['home', 'intro', 'test']) phones.push(await screenshot(browser, { scheme, phone: true, screen }))
     await phoneRow(phones, `docs/phones-${scheme}.png`)
   }
 } finally {

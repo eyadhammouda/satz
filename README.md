@@ -2,32 +2,41 @@
 
 <p align="center">
   <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="docs/desktop-review-dark.png">
-    <img src="docs/desktop-review-light.png" alt="Review in Safari, marking Hallo where the Austrian answer is Servus" width="820">
+    <source media="(prefers-color-scheme: dark)" srcset="docs/desktop-test-dark.png">
+    <img src="docs/desktop-test-light.png" alt="A review in Safari, marking the one wrong word" width="820">
   </picture>
 </p>
 
 <p align="center">
   <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="docs/desktop-today-dark.png">
-    <img src="docs/desktop-today-light.png" alt="Today in Safari, with 6 sentences due" width="405">
+    <source media="(prefers-color-scheme: dark)" srcset="docs/desktop-home-dark.png">
+    <img src="docs/desktop-home-light.png" alt="Home in Safari: one button to start today's lesson" width="405">
   </picture>
   <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="docs/desktop-library-dark.png">
-    <img src="docs/desktop-library-light.png" alt="Library in Safari, each sentence with a listen button" width="405">
+    <source media="(prefers-color-scheme: dark)" srcset="docs/desktop-intro-dark.png">
+    <img src="docs/desktop-intro-light.png" alt="A new sentence, shown with its English and audio" width="405">
   </picture>
 </p>
 
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="docs/phones-dark.png">
-    <img src="docs/phones-light.png" alt="Three iPhones: Today, a review, and adding a sentence with a listen button" width="820">
+    <img src="docs/phones-light.png" alt="Three iPhones: home, a new sentence, and a review" width="820">
   </picture>
 </p>
 
-Servus! Satz is a quiet web app for memorising German sentences, the Austrian way. See the English, type the German from memory, hear it in an Austrian voice, and let spaced review bring each sentence back before you forget it.
+Satz teaches German one sentence at a time, in one-hour lessons. Press one button and study. The app chooses the sentences, reads them aloud in an Austrian voice, and brings each one back just before you would forget it.
 
 Live at [satz-app.vercel.app](https://satz-app.vercel.app). Private: only the owner can sign in.
+
+## How a lesson works
+
+- **New sentences** come from a course of 20,000, easiest first. You see the English, the German and hear it, then say it aloud.
+- **Tests** show the English. Say the German, type it, and the answer is checked word by word. Typed umlauts (ae, oe, ue, ss) and capital slips still pass.
+- **Repeats** follow the research on spaced retrieval: a new sentence is tested after about 1 minute and 10 minutes, then scheduled by [FSRS](https://github.com/open-spaced-repetition/ts-fsrs) over days and weeks.
+- **One hour:** reviews come first, new sentences mix in after about 10 minutes and stop at 45, and the last minutes go over what you learned. The clock only counts active study and pauses when you step away. Start another hour whenever you like.
+
+Progress stays in your browser. Use Export now and then to keep a backup.
 
 ## Run it
 
@@ -36,17 +45,6 @@ npm install
 npm run dev
 ```
 
-## How it works
-
-- **Add** sentences as you watch. German, Enter, English, Enter.
-- **Today** shows what is due. A correct answer pushes a sentence further out (1, 3, 7, 14, 30, then 60 days). A miss brings it back tomorrow.
-- **Library** holds everything, with search, edit, export and import.
-- **Listen** to any sentence with one click: while you type it, in the library, and after each answer.
-
-Your sentences stay in your browser. Use Export now and then to keep a backup.
-
-The live site is private. Sign-in uses Google and lets in one email address, set in Vercel as `ALLOWED_EMAIL`. Sentences are read aloud by Chris, an Austrian ElevenLabs voice (set `ELEVENLABS_VOICE_ID` to pick another), and fall back to the browser's German voice when that is not available.
-
 ## Test
 
 ```sh
@@ -54,14 +52,26 @@ npm test
 npm run test:e2e
 ```
 
+## Sentences
+
+```sh
+python3 scripts/build-sentences.py
+```
+
+Rebuilds `public/sentences/` from the latest [Tatoeba](https://tatoeba.org) exports.
+
 ## Screenshots
 
 ```sh
 npm run screenshots
 ```
 
-Screenshots the app with a few Austrian sentences and frames them with [cutaway](https://github.com/half144/cutaway) on a macOS wallpaper. Needs Node 22 and cutaway in `~/.cutaway`.
+Needs Node 22 and [cutaway](https://github.com/half144/cutaway) in `~/.cutaway`.
+
+## Credits
+
+Sentences and translations are from [Tatoeba](https://tatoeba.org), licensed [CC BY 2.0 FR](https://creativecommons.org/licenses/by/2.0/fr/). Each sentence keeps its Tatoeba id and author in `public/sentences/`. Difficulty uses the [FrequencyWords](https://github.com/hermitdave/FrequencyWords) German list (CC BY-SA 4.0) at build time only.
 
 ## License
 
-MIT
+Code: MIT. Sentence data: CC BY 2.0 FR, as above.
