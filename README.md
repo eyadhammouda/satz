@@ -2,7 +2,7 @@
 
 A quiet web app for memorising German sentences. See the English, type the German from memory, and let spaced review bring each sentence back before you forget it.
 
-Live at [satz.vercel.app](https://satz.vercel.app).
+Live at [satz-app.vercel.app](https://satz-app.vercel.app).
 
 ## Run it
 
