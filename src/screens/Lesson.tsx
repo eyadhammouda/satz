@@ -72,10 +72,11 @@ export default function Lesson({ progress, total, setProgress, onClose }: Props)
     setStep(null)
   }
 
-  // A new sentence, and a listening test, are read aloud as soon as they appear.
+  // A new sentence is read twice as soon as it appears, a second apart. A listening test is read once.
   const playCard = useEffectEvent(() => {
     if (!sentence || !voice) return
-    if (step?.kind === 'intro' || (step?.kind === 'test' && step.mode === 'listen')) voice.speak(sentence.german)
+    if (step?.kind === 'intro') voice.speak(sentence.german, 2)
+    else if (step?.kind === 'test' && step.mode === 'listen') voice.speak(sentence.german)
   })
   useEffect(() => {
     playCard()

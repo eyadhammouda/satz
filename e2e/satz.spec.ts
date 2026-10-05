@@ -14,15 +14,25 @@ function watchConsole(page: Page) {
   return problems
 }
 
-/** Records what would be read aloud, instead of playing it. */
+/**
+ * Records what would be read aloud, instead of playing it. The preview server has no /api/speak,
+ * so a stand-in for Audio "plays" each sentence at once without loading anything.
+ */
 async function fakeVoice(page: Page) {
   await page.addInitScript(() => {
     const played: string[] = []
-    Object.assign(window, { played })
-    HTMLMediaElement.prototype.play = function () {
-      played.push(new URL(this.src).searchParams.get('text') ?? '')
-      return Promise.resolve()
+    class FakeAudio extends EventTarget {
+      constructor(public src: string) {
+        super()
+      }
+      play() {
+        played.push(new URL(this.src, location.href).searchParams.get('text') ?? '')
+        setTimeout(() => this.dispatchEvent(new Event('ended')), 0)
+        return Promise.resolve()
+      }
+      pause() {}
     }
+    Object.assign(window, { played, Audio: FakeAudio })
   })
 }
 
@@ -123,14 +133,37 @@ test('a new sentence is shown with audio, then tested about a minute later', asy
   expect(problems).toEqual([])
 })
 
-test('a wrong answer is marked word by word and comes back soon', async ({ page }) => {
+test('a new sentence plays twice, a second apart, and the listen button cuts in', async ({ page }) => {
   await open(page)
   const sentences = await course(page)
   await page.getByRole('button', { name: "Start today's lesson" }).click()
-  await page.keyboard.press('Enter')
+  await expect(page.getByText(sentences[0].german, { exact: true })).toBeVisible()
+  await expect.poll(() => played(page)).toEqual([sentences[0].german])
+  await page.clock.runFor(500)
+  expect(await played(page)).toEqual([sentences[0].german])
+  await page.clock.runFor(600)
+  await expect.poll(() => played(page)).toEqual([sentences[0].german, sentences[0].german])
+  await page.clock.runFor(3000)
+  expect(await played(page)).toHaveLength(2)
+
+  // On the next sentence, a click on listen during the pause replaces the waiting repeat.
+  await page.getByRole('button', { name: /I said it/ }).click()
   await expect(page.getByText(sentences[1].german, { exact: true })).toBeVisible()
-  await page.clock.fastForward(MIN)
-  await page.keyboard.press('Enter')
+  await page.clock.runFor(100)
+  await expect.poll(async () => (await played(page)).length).toBe(3)
+  await page.getByRole('button', { name: 'Listen' }).click()
+  await page.clock.runFor(100)
+  await page.clock.runFor(3000)
+  // The automatic reading, then the click. The waiting repeat was dropped.
+  await expect.poll(async () => (await played(page)).slice(2)).toEqual([sentences[1].german, sentences[1].german])
+  await page.clock.runFor(3000)
+  expect(await played(page)).toHaveLength(4)
+})
+
+test('a wrong answer is marked word by word and comes back soon', async ({ page }) => {
+  await open(page)
+  const sentences = await course(page)
+  await toFirstTest(page)
 
   const words = sentences[0].german.replace(/[.!?]$/, '').split(' ')
   const wrong = ['Xyz', ...words.slice(1)].join(' ')
