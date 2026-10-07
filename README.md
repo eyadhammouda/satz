@@ -31,9 +31,11 @@ Live at [satz-app.vercel.app](https://satz-app.vercel.app). Private: only the ow
 
 ## How a lesson works
 
-- **New sentences** come from a course of about 14,000, and each one brings exactly one word you have not met yet, the most common first. The new word is underlined. You see the English, read the German, hear it twice, then say it aloud.
+- **New sentences** come from a course of about 14,000, and each one brings exactly one word you have not met yet, the most common first. The new word is underlined, with a short dictionary note (der, die or das, and its meaning). You see the English, read the German, hear it twice, then say it aloud.
 - **Tests** show the English. Say the German, type it, and the answer is checked word by word. Typed umlauts (ae, oe, ue, ss) and capital slips still pass. Then say the right sentence aloud once more.
 - **Repeats** follow the research on spaced retrieval: a new sentence is tested after about 1 minute and 10 minutes, then scheduled by [FSRS](https://github.com/open-spaced-repetition/ts-fsrs) over days, weeks and months.
+- **Your memory:** after 200 answers, the official FSRS optimizer fits the review timing to your own memory, and refits it every week as you go.
+- **Progress** shows words learned, how much you remember now, minutes per day and how strong each memory is.
 - **30 minutes:** reviews come first, new sentences mix in after about 5 minutes and stop at 20, and the last minutes go over what you learned. The clock only counts active study and pauses when you step away. Start another lesson whenever you like.
 
 Progress stays in your browser. Use Export now and then to keep a backup.
@@ -58,7 +60,7 @@ npm run test:e2e
 python3 scripts/build-sentences.py
 ```
 
-Rebuilds `public/sentences/` from the latest [Tatoeba](https://tatoeba.org) exports.
+Rebuilds `public/sentences/` from the latest [Tatoeba](https://tatoeba.org) exports. Then `python3 scripts/build-glosses.py` rebuilds the word notes.
 
 ## Screenshots
 
@@ -70,8 +72,8 @@ Needs Node 22 and [cutaway](https://github.com/half144/cutaway) in `~/.cutaway`.
 
 ## Credits
 
-Sentences and translations are from [Tatoeba](https://tatoeba.org), licensed [CC BY 2.0 FR](https://creativecommons.org/licenses/by/2.0/fr/). Each sentence keeps its Tatoeba id and author in `public/sentences/`. Difficulty uses the [FrequencyWords](https://github.com/hermitdave/FrequencyWords) German list (CC BY-SA 4.0) at build time only.
+Sentences and translations are from [Tatoeba](https://tatoeba.org), licensed [CC BY 2.0 FR](https://creativecommons.org/licenses/by/2.0/fr/). Each sentence keeps its Tatoeba id and author in `public/sentences/`. Difficulty uses the [FrequencyWords](https://github.com/hermitdave/FrequencyWords) German list (CC BY-SA 4.0) at build time only. Word notes come from [Wiktionary](https://en.wiktionary.org) via [kaikki.org](https://kaikki.org), CC BY-SA 4.0. Scheduling uses [FSRS](https://github.com/open-spaced-repetition).
 
 ## License
 
-Code: MIT. Sentence data: CC BY 2.0 FR, as above.
+Code: MIT. Sentence data: CC BY 2.0 FR. Word notes: CC BY-SA 4.0.

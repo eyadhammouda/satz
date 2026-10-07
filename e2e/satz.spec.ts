@@ -277,7 +277,7 @@ test('a second lesson the same day is allowed after the first one ends', async (
 test('a new sentence shows its new word underlined', async ({ page }) => {
   await open(page)
   await page.getByRole('button', { name: "Start today's lesson" }).click()
-  await expect(page.getByText('New word underlined.', { exact: false })).toBeVisible()
+  await expect(page.getByText('New sentence')).toBeVisible()
   const word = await page.evaluate(async () => (await (await fetch('/sentences/000.json')).json())[0][4] as string)
   await expect(page.locator('main p[lang="de"] .underline')).toHaveText(new RegExp(`^${word}$`, 'i'))
 })
@@ -316,6 +316,55 @@ test('progress from the first course moves over, keeping an open lesson and its 
     expect(keys, `course 1 sentence ${i}`).toContain(target)
   }
   expect(p.lesson.clock.activeMs).toBe(19 * MIN)
+})
+
+test('a new word shows its dictionary note', async ({ page }) => {
+  await open(page)
+  const [word, note] = await page.evaluate(async () => {
+    const rows = await (await fetch('/sentences/000.json')).json()
+    const glosses = await (await fetch('/sentences/glosses.json')).json()
+    return [rows[0][4], glosses[rows[0][4]]] as [string, [string, string, string]]
+  })
+  expect(note, `a note for ${word}`).toBeTruthy()
+  await page.getByRole('button', { name: "Start today's lesson" }).click()
+  await expect(page.getByText(`: ${note[2]}`, { exact: false })).toBeVisible()
+})
+
+test('the progress page shows words learned, minutes and the memory model', async ({ page }) => {
+  const problems = watchConsole(page)
+  await open(page)
+  await page.getByRole('button', { name: "Start today's lesson" }).click()
+  await next(page)
+  await next(page)
+  await page.getByRole('button', { name: 'Close' }).click()
+  await expect(page.getByText(/tuned to your memory after 200 answers/)).toBeVisible()
+  await page.getByRole('button', { name: 'See progress' }).click()
+  await expect(page.getByRole('heading', { name: 'Progress' })).toBeVisible()
+  await expect(page.locator('dd').first()).toHaveText('2')
+  await expect(page.getByRole('img', { name: /Minutes studied/ })).toBeVisible()
+  await expect(page.getByText('Your memory model')).toBeVisible()
+  const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)
+  expect(overflow).toBeLessThanOrEqual(0)
+  await page.getByRole('button', { name: 'Back' }).click()
+  await expect(page.getByRole('button', { name: /lesson/ })).toBeVisible()
+  expect(problems).toEqual([])
+})
+
+test('after enough answers, reviews are tuned to a fitted model', async ({ page }) => {
+  await fakeVoice(page)
+  await page.clock.install({ time: START })
+  // The preview server has no /api/optimize, so answer it here.
+  let posted: { reviews: unknown[] } | null = null
+  await page.route('**/api/optimize', async (route) => {
+    posted = route.request().postDataJSON()
+    await route.fulfill({ json: { parameters: Array.from({ length: 21 }, (_, i) => [0.2, 1.2, 3, 16, 7, 0.5, 1.6, 0.01, 1.5, 0.15, 1, 1.9, 0.11, 0.3, 2.3, 0.2, 3, 0.5, 0.6, 0.2, 0.1][i]), logLoss: 0.3, defaultLogLoss: 0.4, reviews: 250 } })
+  })
+  const reviews = Array.from({ length: 250 }, (_, i) => [i % 50, START.getTime() - (250 - i) * 3_600_000, i % 7 === 0 ? 1 : 3])
+  await page.addInitScript((data) => localStorage.setItem('satz.v2', data), JSON.stringify({ version: 2, course: 2, next: 0, cards: {}, lesson: null, history: [], accepted: {}, extra: {}, reviews }))
+  await page.goto('/')
+  await expect(page.getByText(/tuned to your memory, from 250 answers, 25% more accurate/)).toBeVisible()
+  expect(posted!.reviews).toHaveLength(250)
+  expect((await progress(page)).model.parameters).toHaveLength(21)
 })
 
 test('progress survives reload, and export then import restores it', async ({ page, browser }) => {
