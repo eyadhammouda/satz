@@ -6,6 +6,7 @@ import {
   type ExtraSentence,
   type Lesson,
   type LessonRecord,
+  type PersonalModel,
   type Progress,
   type StoredCard,
 } from './lesson'
@@ -100,7 +101,14 @@ export function parseProgress(data: unknown): Progress {
           Array.isArray(r) && Number.isInteger(r[0]) && isNumber(r[1]) && (r[2] === 1 || r[2] === 3),
       )
     : []
-  return { version: 2, course, next: d.next, cards, lesson: parseLesson(d.lesson), history, accepted, extra, reviews }
+  return { version: 2, course, next: d.next, cards, lesson: parseLesson(d.lesson), history, accepted, extra, reviews, model: parseModel(d.model) }
+}
+
+function parseModel(value: unknown): PersonalModel | null {
+  const m = value as Partial<PersonalModel> | null
+  if (!m || !Array.isArray(m.parameters) || m.parameters.length < 17 || !m.parameters.every(isNumber)) return null
+  if (!isNumber(m.fitted) || !isCount(m.reviews) || !isNumber(m.logLoss) || !isNumber(m.defaultLogLoss)) return null
+  return { parameters: m.parameters, fitted: m.fitted, reviews: m.reviews, logLoss: m.logLoss, defaultLogLoss: m.defaultLogLoss }
 }
 
 /** One row of public/sentences/legacy-v1.json: [new position or -1, tatoeba id, german, english, alternatives?]. */
@@ -151,6 +159,7 @@ export function migrateFromCourse1(progress: Progress, legacy: LegacyRow[]): Pro
     accepted,
     extra,
     reviews,
+    model: null,
   }
   return { ...migrated, next: nextUnlearned(migrated, 0) }
 }

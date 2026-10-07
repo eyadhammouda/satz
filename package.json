@@ -13,6 +13,7 @@
     "test:e2e": "playwright test"
   },
   "dependencies": {
+    "@open-spaced-repetition/binding": "^0.5.0",
     "@tailwindcss/vite": "^4.3.3",
     "@vercel/functions": "^3.9.11",
     "class-variance-authority": "^0.7.1",

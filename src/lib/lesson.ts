@@ -1,4 +1,4 @@
-import { createEmptyCard, fsrs, Rating, State, type Card } from 'ts-fsrs'
+import { createEmptyCard, fsrs, Rating, State, type Card, type FSRS } from 'ts-fsrs'
 import { elapsed, LESSON_MS, newClock, ping, type Clock } from './timer'
 
 /**
@@ -27,13 +27,30 @@ export const REVIEWS_BETWEEN_NEW = 3
 /** Reviews of sentences with an interval of at least this many days alternate with listening. */
 export const DICTATION_AFTER_DAYS = 21
 
-export const scheduler = fsrs({
+const SETTINGS = {
   request_retention: 0.9,
   learning_steps: ['1m', '10m'],
   relearning_steps: ['10m'],
   enable_fuzz: true,
   enable_short_term: true,
-})
+} as const
+
+export const scheduler = fsrs(SETTINGS)
+
+const personal = new Map<string, FSRS>()
+
+/** The scheduler for this learner: their own fitted parameters when there are any, otherwise the defaults. */
+export function schedulerFor(progress: Pick<Progress, 'model'>): FSRS {
+  const w = progress.model?.parameters
+  if (!w) return scheduler
+  const key = w.join(',')
+  let f = personal.get(key)
+  if (!f) {
+    f = fsrs({ ...SETTINGS, w })
+    personal.set(key, f)
+  }
+  return f
+}
 
 export interface StoredCard {
   due: number
@@ -101,6 +118,18 @@ export interface Progress {
    * Kept so the FSRS parameters can later be fitted to this learner's own memory.
    */
   reviews: [number, number, 1 | 3][]
+  /** FSRS parameters fitted to this learner's answers, see api/optimize.ts. Null until there is enough data. */
+  model: PersonalModel | null
+}
+
+export interface PersonalModel {
+  parameters: number[]
+  /** When it was fitted, and on how many reviews. */
+  fitted: number
+  reviews: number
+  /** Prediction error of the personal and default parameters on the learner's answers. Lower is better. */
+  logLoss: number
+  defaultLogLoss: number
 }
 
 /** final: one more pass over today's sentences, which only reschedules a miss. */
@@ -122,6 +151,7 @@ export const emptyProgress = (): Progress => ({
   accepted: {},
   extra: {},
   reviews: [],
+  model: null,
 })
 
 /** The first course position at or after `from` that has not been learned yet. */
@@ -203,7 +233,7 @@ export function nextStep(progress: Progress, total: number, now: number): Step {
     // The sentence most likely to be forgotten comes first.
     const date = new Date(now)
     const hardest = dueReviews
-      .map((e) => ({ ...e, r: scheduler.get_retrievability(toCard(e.card), date, false) }))
+      .map((e) => ({ ...e, r: schedulerFor(progress).get_retrievability(toCard(e.card), date, false) }))
       .sort((a, b) => a.r - b.r || a.index - b.index)[0]
     const listen = hardest.card.scheduled_days >= DICTATION_AFTER_DAYS && hardest.card.reps % 2 === 0
     return { kind: 'test', index: hardest.index, reason: 'review', mode: listen ? 'listen' : 'type' }
@@ -253,7 +283,7 @@ export function recordAnswer(progress: Progress, index: number, pass: boolean, r
   let cards = progress.cards
   let reviews = progress.reviews
   if (!(reason === 'final' && pass)) {
-    const { card } = scheduler.next(toCard(stored), new Date(now), pass ? Rating.Good : Rating.Again)
+    const { card } = schedulerFor(progress).next(toCard(stored), new Date(now), pass ? Rating.Good : Rating.Again)
     cards = { ...cards, [index]: fromCard(card, stored.introduced) }
     reviews = [...reviews, [index, now, pass ? 3 : 1]]
   }

@@ -77,6 +77,20 @@ export async function ensureLoaded(indices: Iterable<number>): Promise<void> {
   await Promise.all([...needed].map((n) => loadChunk(n, chunk)))
 }
 
+/** A short dictionary note for a new word: [base form with article, what this form is, meaning]. */
+export type Gloss = [base: string, form: string, meaning: string]
+
+let glossesPromise: Promise<Record<string, Gloss>> | undefined
+
+/** Word notes from Wiktionary, loaded once. An empty map if they cannot be loaded. */
+export function loadGlosses(): Promise<Record<string, Gloss>> {
+  glossesPromise ??= getJson<Record<string, Gloss>>(`${BASE}glosses.json`).catch(() => {
+    glossesPromise = undefined
+    return {}
+  })
+  return glossesPromise
+}
+
 /** The map from course 1 positions to this course, for migrating saved progress. */
 export async function loadLegacyV1(): Promise<LegacyRow[]> {
   return getJson<LegacyRow[]>(`${BASE}legacy-v1.json`)

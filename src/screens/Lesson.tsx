@@ -6,7 +6,7 @@ import { Input } from '@/components/ui/input'
 import { useNow } from '@/hooks/useProgress'
 import { useVoice } from '@/hooks/useGermanVoice'
 import { checkAnswer, diffWords, type DiffWord, type Verdict } from '@/lib/check'
-import { ensureLoaded, getSentence, type CourseSentence } from '@/lib/course'
+import { ensureLoaded, getSentence, loadGlosses, type CourseSentence, type Gloss } from '@/lib/course'
 import { endLesson, introduce, nextStep, recordAnswer, summarise, type LessonRecord, type Progress, type Step } from '@/lib/lesson'
 import { elapsed, formatClock, isIdle, LESSON_MS, pause, ping } from '@/lib/timer'
 
@@ -31,10 +31,22 @@ export default function Lesson({ progress, total, setProgress, onClose }: Props)
   const [result, setResult] = useState<{ verdict: Verdict; target: string; answer: string } | null>(null)
   const [summary, setSummary] = useState<LessonRecord | null>(null)
   const [loadError, setLoadError] = useState(false)
+
   // Bumped to ask for the next card again, for example after a failed load.
   const [attempt, setAttempt] = useState(0)
+  const [glosses, setGlosses] = useState<Record<string, Gloss>>({})
   const inputRef = useRef<HTMLInputElement>(null)
   const continueRef = useRef<HTMLButtonElement>(null)
+
+  useEffect(() => {
+    let cancelled = false
+    void loadGlosses().then((g) => {
+      if (!cancelled) setGlosses(g)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   const sentence: CourseSentence | undefined = step && step.kind !== 'done' ? getSentence(step.index) : undefined
   const accepted = sentence ? [sentence.german, ...sentence.alternatives, ...(progress.accepted[sentence.index] ?? [])] : []
@@ -231,9 +243,8 @@ export default function Lesson({ progress, total, setProgress, onClose }: Props)
             </p>
             <ListenButton text={sentence.german} size="icon" className="-mt-0.5 -mr-3" />
           </div>
-          <p className="mt-8 text-[15px] text-muted-foreground">
-            {sentence.newWord ? 'New word underlined. ' : ''}Listen, then say it aloud twice.
-          </p>
+          {sentence.newWord && glosses[sentence.newWord] && <WordNote gloss={glosses[sentence.newWord]} />}
+          <p className="mt-8 text-[15px] text-muted-foreground">Listen, then say it aloud twice.</p>
           <Button ref={continueRef} size="lg" className="mt-10 self-start" onClick={showIntro}>
             I said it
             <Kbd>Enter</Kbd>
@@ -331,6 +342,19 @@ export default function Lesson({ progress, total, setProgress, onClose }: Props)
         </main>
       )}
     </div>
+  )
+}
+
+/** The new word's dictionary note: its base form (with der, die or das for nouns), what form it is, and its meaning. */
+function WordNote({ gloss: [base, form, meaning] }: { gloss: Gloss }) {
+  return (
+    <p className="mt-5 text-[15px]">
+      <span lang="de" className="font-medium">
+        {base}
+      </span>
+      {form && <span className="text-muted-foreground">, {form}</span>}
+      <span className="text-muted-foreground">: {meaning}</span>
+    </p>
   )
 }
 

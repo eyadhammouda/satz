@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button'
 import { useNow, type CourseState } from '@/hooks/useProgress'
 import { studyDay } from '@/lib/day'
 import { dueReviewCount, emptyProgress, type Progress } from '@/lib/lesson'
+import { MIN_REVIEWS } from '@/lib/model'
 import { exportProgress, readProgressFile } from '@/lib/progress'
 import { elapsed, formatClock, LESSON_MS } from '@/lib/timer'
 
@@ -12,9 +13,10 @@ interface Props {
   failed: boolean
   onStart: () => void
   onImport: (progress: Progress) => Promise<void>
+  onShowProgress: () => void
 }
 
-export default function Home({ state, failed, onStart, onImport }: Props) {
+export default function Home({ state, failed, onStart, onImport, onShowProgress }: Props) {
   const now = useNow(30_000)
   const fileRef = useRef<HTMLInputElement>(null)
   const progress = state?.progress ?? emptyProgress()
@@ -22,7 +24,11 @@ export default function Home({ state, failed, onStart, onImport }: Props) {
   const due = dueReviewCount(progress, now)
   const learned = Object.keys(progress.cards).length
   const today = studyDay(now)
-  const todays = progress.history.filter((h) => studyDay(h.started) === today)
+  // Today's finished lessons, plus the one still open.
+  const todays = [
+    ...progress.history,
+    ...(progress.lesson ? [{ started: progress.lesson.started, activeMs: progress.lesson.clock.activeMs, introduced: progress.lesson.introduced.length }] : []),
+  ].filter((h) => studyDay(h.started) === today)
   const minutesToday = Math.round(todays.reduce((sum, h) => sum + h.activeMs, 0) / 60_000)
   const learnedToday = todays.reduce((sum, h) => sum + h.introduced, 0)
   // An unfinished lesson carries on, whatever the day.
@@ -66,6 +72,11 @@ export default function Home({ state, failed, onStart, onImport }: Props) {
         <Stat label="Minutes today" value={minutesToday} />
       </dl>
 
+      <p className="mt-10 max-w-[320px] text-[13px] text-muted-foreground">{memoryLine(progress)}</p>
+      <Button variant="ghost" size="sm" className="mt-2 text-muted-foreground" disabled={!state} onClick={onShowProgress}>
+        See progress
+      </Button>
+
       <div className="mt-auto flex justify-center gap-2 pt-14">
         <Button variant="ghost" size="sm" className="text-muted-foreground" disabled={!state} onClick={() => exportProgress(progress, today)}>
           Export
@@ -97,10 +108,27 @@ export default function Home({ state, failed, onStart, onImport }: Props) {
         <a href="https://tatoeba.org" target="_blank" rel="noreferrer" className="underline underline-offset-2">
           Tatoeba
         </a>
-        , CC BY 2.0 FR
+        , CC BY 2.0 FR. Word notes from{' '}
+        <a href="https://en.wiktionary.org" target="_blank" rel="noreferrer" className="underline underline-offset-2">
+          Wiktionary
+        </a>
+        , CC BY-SA 4.0
       </p>
     </section>
   )
+}
+
+/** One quiet line about the memory model that times the reviews. */
+function memoryLine(progress: Progress): string {
+  const answers = progress.reviews.length
+  const m = progress.model
+  if (!m) {
+    return answers < MIN_REVIEWS
+      ? `Reviews will be tuned to your memory after ${MIN_REVIEWS} answers. ${answers} so far.`
+      : 'Tuning reviews to your memory.'
+  }
+  const better = Math.max(0, Math.round((1 - m.logLoss / m.defaultLogLoss) * 100))
+  return `Reviews are tuned to your memory, from ${m.reviews} answers${better > 0 ? `, ${better}% more accurate than the default` : ''}.`
 }
 
 function Stat({ label, value }: { label: string; value: number }) {
