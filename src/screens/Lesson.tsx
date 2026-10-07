@@ -227,11 +227,13 @@ export default function Lesson({ progress, total, setProgress, onClose }: Props)
           <p className="mt-3 text-[22px] leading-[1.3] text-muted-foreground text-balance">{sentence.english}</p>
           <div className="mt-6 flex items-start gap-2">
             <p lang="de" className="flex-1 text-[32px] leading-[1.2] font-medium tracking-[-0.02em] text-balance">
-              {sentence.german}
+              <Highlight text={sentence.german} word={sentence.newWord} />
             </p>
             <ListenButton text={sentence.german} size="icon" className="-mt-0.5 -mr-3" />
           </div>
-          <p className="mt-8 text-[15px] text-muted-foreground">Listen, then say it aloud twice.</p>
+          <p className="mt-8 text-[15px] text-muted-foreground">
+            {sentence.newWord ? 'New word underlined. ' : ''}Listen, then say it aloud twice.
+          </p>
           <Button ref={continueRef} size="lg" className="mt-10 self-start" onClick={showIntro}>
             I said it
             <Kbd>Enter</Kbd>
@@ -292,7 +294,9 @@ export default function Lesson({ progress, total, setProgress, onClose }: Props)
                 </p>
               )}
 
-              <div className="mt-10 flex flex-wrap items-center gap-3">
+              <p className="mt-3 text-[13px] text-muted-foreground">Say it aloud once more.</p>
+
+              <div className="mt-8 flex flex-wrap items-center gap-3">
                 <p className="mr-auto text-[15px] font-medium" role="status">
                   {result.verdict === 'exact' ? 'Correct' : result.verdict === 'close' ? 'Correct, mind the spelling' : 'Not quite'}
                 </p>
@@ -328,6 +332,24 @@ export default function Lesson({ progress, total, setProgress, onClose }: Props)
       )}
     </div>
   )
+}
+
+/** The sentence with its new word underlined. Matches the word in any case. */
+function Highlight({ text, word }: { text: string; word: string }) {
+  if (!word) return text
+  const parts = text.split(/([A-Za-zÄÖÜäöüß]+(?:-[A-Za-zÄÖÜäöüß]+)*)/)
+  let done = false
+  return parts.map((part, i) => {
+    if (!done && part.toLowerCase() === word) {
+      done = true
+      return (
+        <span key={i} className="underline decoration-2 decoration-foreground/40 underline-offset-[6px]">
+          {part}
+        </span>
+      )
+    }
+    return part
+  })
 }
 
 function Words({ words, kind }: { words: DiffWord[]; kind: 'missing' | 'wrong' }) {

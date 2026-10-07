@@ -36,7 +36,7 @@ describe('lesson clock', () => {
   })
 
   it('formats minutes and seconds', () => {
-    expect(formatClock(LESSON_MS)).toBe('60:00')
+    expect(formatClock(LESSON_MS)).toBe('30:00')
     expect(formatClock(61_000)).toBe('1:01')
     expect(formatClock(500)).toBe('0:01')
     expect(formatClock(0)).toBe('0:00')

@@ -1,5 +1,14 @@
 import { State } from 'ts-fsrs'
-import { emptyProgress, type Lesson, type LessonRecord, type Progress, type StoredCard } from './lesson'
+import {
+  COURSE_VERSION,
+  emptyProgress,
+  nextUnlearned,
+  type ExtraSentence,
+  type Lesson,
+  type LessonRecord,
+  type Progress,
+  type StoredCard,
+} from './lesson'
 
 export const PROGRESS_KEY = 'satz.v2'
 const BROKEN_KEY = 'satz.v2.unreadable'
@@ -58,7 +67,7 @@ export function parseProgress(data: unknown): Progress {
   const cards: Record<string, StoredCard> = {}
   for (const [key, value] of Object.entries(d.cards)) {
     const card = parseCard(value)
-    if (card && isCount(Number(key))) cards[key] = card
+    if (card && Number.isInteger(Number(key))) cards[key] = card
   }
   const history = Array.isArray(d.history)
     ? (d.history as LessonRecord[]).filter((h) => h && isNumber(h.started) && isNumber(h.activeMs))
@@ -69,7 +78,81 @@ export function parseProgress(data: unknown): Progress {
       if (Array.isArray(list)) accepted[key] = list.filter((s): s is string => typeof s === 'string')
     }
   }
-  return { version: 2, next: d.next, cards, lesson: parseLesson(d.lesson), history, accepted }
+  const extra: Record<string, ExtraSentence> = {}
+  if (typeof d.extra === 'object' && d.extra !== null) {
+    for (const [key, value] of Object.entries(d.extra)) {
+      const e = value as Partial<ExtraSentence> | null
+      if (e && isCount(e.tatoebaId) && typeof e.german === 'string' && typeof e.english === 'string') {
+        extra[key] = {
+          tatoebaId: e.tatoebaId,
+          german: e.german,
+          english: e.english,
+          alternatives: Array.isArray(e.alternatives) ? e.alternatives.filter((a) => typeof a === 'string') : [],
+        }
+      }
+    }
+  }
+  // Progress saved before course versions existed belongs to course 1.
+  const course = isCount(d.course) ? d.course : 1
+  const reviews = Array.isArray(d.reviews)
+    ? (d.reviews as unknown[]).filter(
+        (r): r is [number, number, 1 | 3] =>
+          Array.isArray(r) && Number.isInteger(r[0]) && isNumber(r[1]) && (r[2] === 1 || r[2] === 3),
+      )
+    : []
+  return { version: 2, course, next: d.next, cards, lesson: parseLesson(d.lesson), history, accepted, extra, reviews }
+}
+
+/** One row of public/sentences/legacy-v1.json: [new position or -1, tatoeba id, german, english, alternatives?]. */
+export type LegacyRow = [position: number, tatoebaId: number, german: string, english: string, alternatives?: string[]]
+
+/**
+ * Moves progress from course 1 (ordered by difficulty) onto the current course (one new word per sentence).
+ * A learned sentence that is also in the new course keeps its schedule at its new position, so it is not
+ * taught again. One that is not keeps its schedule as an extra sentence under a negative position.
+ * Nothing learned is lost, and an open lesson carries on with the time it has left.
+ */
+export function migrateFromCourse1(progress: Progress, legacy: LegacyRow[]): Progress {
+  const cards: Record<string, StoredCard> = {}
+  const extra: Record<string, ExtraSentence> = {}
+  const accepted: Record<string, string[]> = {}
+  const moved = new Map<number, number>()
+  let nextExtra = -1
+  for (const [key, card] of Object.entries(progress.cards)) {
+    const old = Number(key)
+    const row = legacy[old]
+    if (!row) continue
+    const [position, tatoebaId, german, english, alternatives] = row
+    const target = position >= 0 && !(position in cards) ? position : nextExtra--
+    cards[target] = card
+    moved.set(old, target)
+    if (target < 0) extra[target] = { tatoebaId, german, english, alternatives: alternatives ?? [] }
+    if (progress.accepted[old]) accepted[target] = progress.accepted[old]
+  }
+  const remap = <T,>(record: Record<string, T>) =>
+    Object.fromEntries(Object.entries(record).flatMap(([k, v]) => (moved.has(Number(k)) ? [[moved.get(Number(k))!, v]] : [])))
+  // An open lesson carries on, with its sentences at their new positions and its clock untouched.
+  const lesson = progress.lesson && {
+    ...progress.lesson,
+    introduced: progress.lesson.introduced.flatMap((i) => (moved.has(i) ? [moved.get(i)!] : [])),
+    firstTry: remap(progress.lesson.firstTry),
+    passes: remap(progress.lesson.passes),
+  }
+  const reviews = progress.reviews.flatMap(([old, at, grade]) =>
+    moved.has(old) ? [[moved.get(old)!, at, grade] as [number, number, 1 | 3]] : [],
+  )
+  const migrated: Progress = {
+    version: 2,
+    course: COURSE_VERSION,
+    next: 0,
+    cards,
+    lesson,
+    history: progress.history,
+    accepted,
+    extra,
+    reviews,
+  }
+  return { ...migrated, next: nextUnlearned(migrated, 0) }
 }
 
 export function loadProgress(): Progress {
