@@ -1,36 +1,38 @@
 import { useRef } from 'react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
-import { useNow } from '@/hooks/useProgress'
+import { useNow, type CourseState } from '@/hooks/useProgress'
 import { studyDay } from '@/lib/day'
-import { dueReviewCount, type Progress } from '@/lib/lesson'
+import { dueReviewCount, emptyProgress, type Progress } from '@/lib/lesson'
 import { exportProgress, readProgressFile } from '@/lib/progress'
 import { elapsed, formatClock, LESSON_MS } from '@/lib/timer'
 
 interface Props {
-  progress: Progress
-  total: number | null
+  state: CourseState | null
+  failed: boolean
   onStart: () => void
-  onImport: (progress: Progress) => void
+  onImport: (progress: Progress) => Promise<void>
 }
 
-export default function Home({ progress, total, onStart, onImport }: Props) {
+export default function Home({ state, failed, onStart, onImport }: Props) {
   const now = useNow(30_000)
   const fileRef = useRef<HTMLInputElement>(null)
+  const progress = state?.progress ?? emptyProgress()
+  const total = state?.total ?? null
   const due = dueReviewCount(progress, now)
-  const learned = progress.next
+  const learned = Object.keys(progress.cards).length
   const today = studyDay(now)
   const todays = progress.history.filter((h) => studyDay(h.started) === today)
   const minutesToday = Math.round(todays.reduce((sum, h) => sum + h.activeMs, 0) / 60_000)
   const learnedToday = todays.reduce((sum, h) => sum + h.introduced, 0)
-  // A lesson left unfinished on an earlier day is not continued; a fresh hour starts instead.
-  const open = progress.lesson && studyDay(progress.lesson.started) === today ? progress.lesson : null
+  // An unfinished lesson carries on, whatever the day.
+  const open = progress.lesson
   const left = open ? Math.max(0, LESSON_MS - elapsed(open.clock, now)) : 0
-  const finished = total !== null && learned >= total && due === 0
+  const finished = total !== null && progress.next >= total && due === 0
 
   const importFile = async (file: File) => {
     try {
-      onImport(await readProgressFile(file))
+      await onImport(await readProgressFile(file))
       toast('Progress restored')
     } catch {
       toast('This file is not Satz progress')
@@ -42,7 +44,7 @@ export default function Home({ progress, total, onStart, onImport }: Props) {
       <h1 className="text-[40px] leading-none font-semibold tracking-[-0.03em]">Satz</h1>
       <p className="mt-3 text-[15px] text-muted-foreground">
         {learned === 0
-          ? 'One hour. As many German sentences as you can hold.'
+          ? 'Thirty minutes. One new word in every sentence.'
           : due > 0
             ? `${due} ${due === 1 ? 'sentence' : 'sentences'} to review, then new ones`
             : 'Nothing to review. All new sentences today'}
@@ -54,7 +56,9 @@ export default function Home({ progress, total, onStart, onImport }: Props) {
         </Button>
       </div>
 
-      {total === null && <p className="mt-4 text-[13px] text-muted-foreground">Loading sentences</p>}
+      {total === null && (
+        <p className="mt-4 text-[13px] text-muted-foreground">{failed ? 'Could not load the sentences. Reload to try again.' : 'Loading sentences'}</p>
+      )}
 
       <dl className="mt-14 flex gap-12 tabular-nums">
         <Stat label="Learned" value={learned} />
@@ -63,10 +67,10 @@ export default function Home({ progress, total, onStart, onImport }: Props) {
       </dl>
 
       <div className="mt-auto flex justify-center gap-2 pt-14">
-        <Button variant="ghost" size="sm" className="text-muted-foreground" onClick={() => exportProgress(progress, today)}>
+        <Button variant="ghost" size="sm" className="text-muted-foreground" disabled={!state} onClick={() => exportProgress(progress, today)}>
           Export
         </Button>
-        <Button variant="ghost" size="sm" className="text-muted-foreground" onClick={() => fileRef.current?.click()}>
+        <Button variant="ghost" size="sm" className="text-muted-foreground" disabled={!state} onClick={() => fileRef.current?.click()}>
           Import
         </Button>
         <form method="post" action="/api/auth/logout">

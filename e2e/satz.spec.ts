@@ -68,8 +68,8 @@ const progress = (page: Page) => page.evaluate(() => JSON.parse(localStorage.get
 /** The course, as the app loads it. */
 async function course(page: Page): Promise<{ german: string; english: string; alternatives: string[] }[]> {
   return page.evaluate(async () => {
-    const rows = (await (await fetch('/sentences/000.json')).json()) as [number, string, string, string, string[]?][]
-    return rows.map(([, german, english, , alternatives]) => ({ german, english, alternatives: alternatives ?? [] }))
+    const rows = (await (await fetch('/sentences/000.json')).json()) as [number, string, string, string, string, string[]?][]
+    return rows.map(([, german, english, , , alternatives]) => ({ german, english, alternatives: alternatives ?? [] }))
   })
 }
 
@@ -108,7 +108,7 @@ test('a new sentence is shown with audio, then tested about a minute later', asy
   await expect(page.getByText(sentences[0].german, { exact: true })).toBeVisible()
   await expect(page.getByText(sentences[0].english, { exact: true })).toBeVisible()
   await expect.poll(async () => (await played(page)).at(-1)).toBe(sentences[0].german)
-  await expect(page.getByRole('timer')).toHaveText('60:00')
+  await expect(page.getByRole('timer')).toHaveText('30:00')
 
   // Next card is the second new sentence, then the first comes back as a test once a minute has passed.
   await page.keyboard.press('Enter')
@@ -198,7 +198,7 @@ test('"I was right" accepts my answer from then on', async ({ page }) => {
   expect((await progress(page)).accepted['0']).toEqual(['Das bin ich gewesen'])
 })
 
-test('a whole hour: many new sentences, every one tested, then a summary', async ({ page }) => {
+test('a whole lesson: many new sentences, every one tested, then a summary', async ({ page }) => {
   test.setTimeout(240_000)
   const problems = watchConsole(page)
   await open(page)
@@ -209,7 +209,7 @@ test('a whole hour: many new sentences, every one tested, then a summary', async
   while (cards < 400) {
     if (await page.getByText('Lesson done').isVisible()) break
     await answerCorrectly(page, byEnglish)
-    // About 25 seconds per card, so the hour runs out on the lesson's own clock.
+    // About 25 seconds per card, so the lesson runs out on its own clock.
     await page.clock.fastForward(25_000)
     cards++
   }
@@ -217,8 +217,8 @@ test('a whole hour: many new sentences, every one tested, then a summary', async
   const p = await progress(page)
   expect(p.lesson).toBeNull()
   expect(p.history).toHaveLength(1)
-  expect(p.history[0].introduced).toBeGreaterThanOrEqual(20)
-  expect(p.history[0].activeMs).toBeGreaterThanOrEqual(59 * MIN)
+  expect(p.history[0].introduced).toBeGreaterThanOrEqual(10)
+  expect(p.history[0].activeMs).toBeGreaterThanOrEqual(29 * MIN)
   for (const card of Object.values(p.cards) as { reps: number }[]) expect(card.reps).toBeGreaterThanOrEqual(1)
 
   await page.getByRole('button', { name: 'Done' }).click()
@@ -242,7 +242,7 @@ test('the clock pauses when away, and a lesson resumes where it stopped', async 
   await expect(button).toBeVisible()
   const left = Number((await button.textContent())!.match(/(\d+):\d\d left/)![1])
   // Only the active minutes count, not the 20 away.
-  expect(left).toBeGreaterThanOrEqual(56)
+  expect(left).toBeGreaterThanOrEqual(26)
   await button.click()
   await expect(page.getByRole('timer')).not.toHaveText('Paused')
   expect((await progress(page)).next).toBe(2)
@@ -257,6 +257,7 @@ test('a second lesson the same day is allowed after the first one ends', async (
       'satz.v2',
       JSON.stringify({
         version: 2,
+        course: 2,
         next: 0,
         cards: {},
         lesson: null,
@@ -271,6 +272,50 @@ test('a second lesson the same day is allowed after the first one ends', async (
   await page.getByRole('button', { name: "Start today's lesson" }).click()
   await answerCorrectly(page, byEnglish)
   expect((await progress(page)).lesson).not.toBeNull()
+})
+
+test('a new sentence shows its new word underlined', async ({ page }) => {
+  await open(page)
+  await page.getByRole('button', { name: "Start today's lesson" }).click()
+  await expect(page.getByText('New word underlined.', { exact: false })).toBeVisible()
+  const word = await page.evaluate(async () => (await (await fetch('/sentences/000.json')).json())[0][4] as string)
+  await expect(page.locator('main p[lang="de"] .underline')).toHaveText(new RegExp(`^${word}$`, 'i'))
+})
+
+test('progress from the first course moves over, keeping an open lesson and its time', async ({ page }) => {
+  await fakeVoice(page)
+  await page.clock.install({ time: START })
+  const legacy = await (await page.request.get('/sentences/legacy-v1.json')).json()
+  // Course 1 positions 0 and 1 learned, and a lesson open with 19 minutes used: 41 of the old 60 left.
+  const card = { due: START.getTime() + 86_400_000, stability: 3, difficulty: 5, elapsed_days: 0, scheduled_days: 1, learning_steps: 0, reps: 2, lapses: 0, state: 2, last_review: START.getTime() - 60_000, introduced: START.getTime() - 20 * MIN }
+  const old = {
+    version: 2,
+    next: 2,
+    cards: { 0: card, 1: card },
+    lesson: { started: START.getTime() - 25 * MIN, clock: { activeMs: 19 * MIN, lastActive: null }, introduced: [0, 1], firstTry: { 0: true, 1: true }, passes: {}, sinceNew: 0 },
+    history: [],
+    accepted: {},
+  }
+  await page.addInitScript((data) => {
+    if (!sessionStorage.getItem('seeded')) {
+      localStorage.setItem('satz.v2', data)
+      sessionStorage.setItem('seeded', '1')
+    }
+  }, JSON.stringify(old))
+  // Opened the next morning: the lesson still carries on.
+  await page.clock.setSystemTime(START.getTime() + 15 * 3_600_000)
+  await page.goto('/')
+  await expect(page.getByRole('button', { name: /^Continue lesson/ })).toContainText('11:00 left')
+  await expect(page.locator('dd').first()).toHaveText('2')
+  const p = await progress(page)
+  expect(p.course).toBe(2)
+  const keys = Object.keys(p.cards).map(Number)
+  // Each kept sentence sits at its new position, or as an extra if the new course does not have it.
+  for (const [i, row] of legacy.slice(0, 2).entries()) {
+    const target = row[0] >= 0 ? row[0] : keys.find((k) => k < 0 && p.extra[k].tatoebaId === row[1])
+    expect(keys, `course 1 sentence ${i}`).toContain(target)
+  }
+  expect(p.lesson.clock.activeMs).toBe(19 * MIN)
 })
 
 test('progress survives reload, and export then import restores it', async ({ page, browser }) => {

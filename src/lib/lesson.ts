@@ -2,23 +2,23 @@ import { createEmptyCard, fsrs, Rating, State, type Card } from 'ts-fsrs'
 import { elapsed, LESSON_MS, newClock, ping, type Clock } from './timer'
 
 /**
- * The learning plan for one hour, built on the research summarised in CLAUDE.md:
+ * The learning plan for one 30-minute lesson, built on the research summarised in CLAUDE.md:
  * - Each new sentence is shown with its audio first, then tested after about
  *   1 minute and 10 minutes (learning steps), then scheduled by FSRS.
  * - Due reviews come first, the most likely to be forgotten first. New sentences
  *   are mixed in once the lesson is warm, so reviews never squeeze out learning.
- * - New sentences stop near the end, so their learning steps fit in the hour, and
- *   the last minutes go to one more pass over the sentences learned this lesson.
+ * - New sentences stop 10 minutes before the end, so their 10-minute step fits in
+ *   the lesson, and the last minutes go to one more pass over what was learned.
  */
 
-export const NEW_SOFT_CAP = 25
-export const NEW_HARD_CAP = 40
+export const NEW_SOFT_CAP = 15
+export const NEW_HARD_CAP = 22
 /** Sentences being learned at once (introduced but not yet graduated). Glossika uses batches of 5. */
 export const MAX_OPEN = 6
-export const WARMUP_MS = 10 * 60_000
-export const NEW_CUTOFF_MS = 45 * 60_000
-export const FINAL_MS = 55 * 60_000
-export const LEARN_AHEAD_MS = 20 * 60_000
+export const WARMUP_MS = 5 * 60_000
+export const NEW_CUTOFF_MS = 20 * 60_000
+export const FINAL_MS = 27 * 60_000
+export const LEARN_AHEAD_MS = 10 * 60_000
 /** First test after the sentence is shown. */
 export const FIRST_TEST_MS = 60_000
 /** Rough time for one review, to judge whether due reviews still fit in the lesson. */
@@ -72,15 +72,35 @@ export interface LessonRecord {
   firstTryCorrect: number
 }
 
+/** A sentence learned on an earlier course that is not part of the current one. It keeps being reviewed. */
+export interface ExtraSentence {
+  tatoebaId: number
+  german: string
+  english: string
+  alternatives: string[]
+}
+
 export interface Progress {
   version: 2
-  /** Course position of the next sentence to introduce. */
+  /** The course version this progress is keyed to (see public/sentences/index.json). */
+  course: number
+  /** Course position of the next sentence to introduce. Positions already in `cards` are skipped. */
   next: number
   cards: Record<string, StoredCard>
   lesson: Lesson | null
   history: LessonRecord[]
   /** German answers the learner marked as right, per course position. */
   accepted: Record<string, string[]>
+  /**
+   * Sentences from an earlier course, keyed by negative positions (-1, -2, ...) in `cards`,
+   * so they keep their review schedule.
+   */
+  extra: Record<string, ExtraSentence>
+  /**
+   * Every graded answer, oldest first: [course position, time in ms, 1 for a miss or 3 for a pass].
+   * Kept so the FSRS parameters can later be fitted to this learner's own memory.
+   */
+  reviews: [number, number, 1 | 3][]
 }
 
 /** final: one more pass over today's sentences, which only reschedules a miss. */
@@ -90,7 +110,26 @@ export type Step =
   | { kind: 'test'; index: number; reason: Reason; mode: 'type' | 'listen' }
   | { kind: 'done'; why: 'time' | 'empty' }
 
-export const emptyProgress = (): Progress => ({ version: 2, next: 0, cards: {}, lesson: null, history: [], accepted: {} })
+export const COURSE_VERSION = 2
+
+export const emptyProgress = (): Progress => ({
+  version: 2,
+  course: COURSE_VERSION,
+  next: 0,
+  cards: {},
+  lesson: null,
+  history: [],
+  accepted: {},
+  extra: {},
+  reviews: [],
+})
+
+/** The first course position at or after `from` that has not been learned yet. */
+export function nextUnlearned(progress: Progress, from = progress.next): number {
+  let i = from
+  while (i in progress.cards) i++
+  return i
+}
 
 export function toCard(stored: StoredCard): Card {
   const { introduced: _introduced, last_review, due, ...rest } = stored
@@ -115,13 +154,9 @@ function fromCard(card: Card, introduced: number): StoredCard {
 
 const isLearning = (card: StoredCard) => card.state !== State.Review
 
-/**
- * Opens the lesson to study now. An unfinished lesson from the same study day carries on
- * where it stopped; one left over from an earlier day is closed and a fresh hour begins.
- */
-export function resumeOrStart(progress: Progress, now: number, sameDay: (a: number, b: number) => boolean): Progress {
-  if (progress.lesson && sameDay(progress.lesson.started, now)) return progress
-  return startLesson(endLesson(progress, now), now)
+/** Opens the lesson to study now: an unfinished lesson carries on where it stopped, whatever the day. */
+export function resumeOrStart(progress: Progress, now: number): Progress {
+  return progress.lesson ? progress : startLesson(progress, now)
 }
 
 export function startLesson(progress: Progress, now: number): Progress {
@@ -149,8 +184,9 @@ export function nextStep(progress: Progress, total: number, now: number): Step {
 
   const dueReviews = entries.filter((e) => e.card.state === State.Review && e.card.due <= now)
   const lessonNew = lesson.introduced.length
-  const canIntroduce = progress.next < total && learning.length < MAX_OPEN
-  const intro: Step = { kind: 'intro', index: progress.next }
+  const upcoming = nextUnlearned(progress)
+  const canIntroduce = upcoming < total && learning.length < MAX_OPEN
+  const intro: Step = { kind: 'intro', index: upcoming }
 
   if (dueReviews.length > 0) {
     const reviewsFit = dueReviews.length * REVIEW_MS < LESSON_MS - t
@@ -198,11 +234,11 @@ export function nextStep(progress: Progress, total: number, now: number): Step {
 export function introduce(progress: Progress, now: number): Progress {
   const lesson = progress.lesson
   if (!lesson) return progress
-  const index = progress.next
+  const index = nextUnlearned(progress)
   const card = fromCard({ ...createEmptyCard(new Date(now)), due: new Date(now + FIRST_TEST_MS) }, now)
   return {
     ...progress,
-    next: index + 1,
+    next: nextUnlearned({ ...progress, cards: { ...progress.cards, [index]: card } }, index + 1),
     cards: { ...progress.cards, [index]: card },
     lesson: { ...lesson, clock: ping(lesson.clock, now), introduced: [...lesson.introduced, index], sinceNew: 0 },
   }
@@ -215,14 +251,17 @@ export function recordAnswer(progress: Progress, index: number, pass: boolean, r
   if (!lesson || !stored) return progress
 
   let cards = progress.cards
+  let reviews = progress.reviews
   if (!(reason === 'final' && pass)) {
     const { card } = scheduler.next(toCard(stored), new Date(now), pass ? Rating.Good : Rating.Again)
     cards = { ...cards, [index]: fromCard(card, stored.introduced) }
+    reviews = [...reviews, [index, now, pass ? 3 : 1]]
   }
   const key = String(index)
   return {
     ...progress,
     cards,
+    reviews,
     lesson: {
       ...lesson,
       clock: ping(lesson.clock, now),

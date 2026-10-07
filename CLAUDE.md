@@ -1,18 +1,18 @@
 # Satz
 
-A private, single-user web app that teaches German through sentences in one-hour lessons. The owner opens it, presses "Start today's lesson" and studies. The app chooses every sentence; the learner adds nothing.
+A private, single-user web app that teaches German through sentences in 30-minute lessons. The owner opens it, presses "Start today's lesson" and studies. The app chooses every sentence; the learner adds nothing.
 
 Live: https://satz-app.vercel.app (Vercel project `satz`, team `eyadsahers-projects`). Repo: https://github.com/eyadhammouda/satz (public).
 
 ## How it behaves
 
-- **Home** (`src/screens/Home.tsx`): one button. It reads "Start today's lesson", or "Continue lesson, mm:ss left" when an hour is unfinished on the same study day. Also shows stats (learned, new today, minutes today), Export, Import, Sign out, and the Tatoeba credit.
-- **Lesson** (`src/screens/Lesson.tsx`): a full-screen loop with a 60-minute bar and countdown.
-  - **New sentence card:** English, German and audio (played automatically). The learner says it aloud twice, then Enter.
+- **Home** (`src/screens/Home.tsx`): one button. It reads "Start today's lesson", or "Continue lesson, mm:ss left" when a lesson is unfinished. Also shows stats (learned, new today, minutes today), Export, Import, Sign out, and the Tatoeba credit.
+- **Lesson** (`src/screens/Lesson.tsx`): a full-screen loop with a 30-minute bar and countdown.
+  - **New sentence card:** English, German with its new word underlined, and audio played twice a second apart. The learner says it aloud twice, then Enter.
   - **Test card:** English shown. The learner types the German, Enter checks it.
-  - **After checking:** the correct sentence is shown with a word diff and played aloud. Enter continues. "I was right" (2) accepts the typed answer for good; "I guessed" (1) fails a lucky pass.
+  - **After checking:** the correct sentence is shown with a word diff and played aloud, with a prompt to say it once more. Enter continues. "I was right" (2) accepts the typed answer for good; "I guessed" (1) fails a lucky pass.
   - **Listen variant:** mature reviews (interval of 21 days or more) alternate with dictation, where the learner types what they hear.
-- **The hour** (`src/lib/timer.ts`) counts active study only. Every key press or tap pings the clock. Gaps longer than 2 minutes, hidden tabs and closing the lesson do not count. When the hour is up, the current card finishes and the summary shows. A lesson left unfinished on an earlier study day is closed and a fresh hour starts. Several lessons a day are fine.
+- **The lesson clock** (`src/lib/timer.ts`, `LESSON_MS` = 30 minutes) counts active study only. Every key press or tap pings the clock. Gaps longer than 2 minutes, hidden tabs and closing the lesson do not count. When time is up, the current card finishes and the summary shows. An unfinished lesson always carries on with the time it has left, even on a later day. Several lessons a day are fine.
 - **Study day** (`src/lib/day.ts`): runs 04:00 to 04:00 local time.
 
 ## Learning method (`src/lib/lesson.ts`, see `nextStep`)
@@ -20,22 +20,25 @@ Live: https://satz-app.vercel.app (Vercel project `satz`, team `eyadsahers-proje
 Based on research into the testing effect, the production effect, spacing, and FSRS benchmarks. Constants are at the top of the file.
 - New sentences are shown before testing, never guessed. Their FSRS learning steps are 1m then 10m, and relearning is 10m. At most 6 are being learned at once.
 - Due learning cards always come first. Due reviews are ordered by lowest FSRS retrievability.
-- New cards start after a 10-minute warm-up when reviews are due, then follow every 3 reviews. They stop at 45 minutes, or earlier if due reviews would not fit in the remaining time, so backlogs clear first. The soft cap is 25 new per lesson, the hard cap 40.
+- New cards start after a 5-minute warm-up when reviews are due, then follow every 3 reviews. They stop at 20 minutes (so the 10-minute step fits), or earlier if due reviews would not fit in the remaining time, so backlogs clear first. The soft cap is 15 new per lesson, the hard cap 22.
 - The last minutes give each sentence learned this lesson a "final" pass, which only reschedules a miss. With nothing left to do, more final passes follow.
 - Grading is binary: pass is FSRS Good, miss is Again. The scheduler is `ts-fsrs` with retention 0.9 and fuzz on.
 - Checking (`src/lib/check.ts`, `checkAnswer`):
   - **exact:** matches after normalisation.
   - **close:** differs only in case, ae/oe/ue/ss for umlauts, or commas. Counts as a pass.
   - **wrong:** anything else. Answers are checked against the sentence, its Tatoeba alternatives, and answers the learner accepted.
-- A 30-day simulation at about 30s per card gives about 25 new sentences on day 1, settling at about 16 a day as reviews grow, with no backlog.
+- Every graded answer is logged in `progress.reviews` ([position, time, 1 or 3]) so FSRS parameters can later be fitted to this learner.
+- A one-year simulation at 25 to 35 seconds per card gives about 15 new sentences on day 1, and about 1,500 to 2,000 sentences (the same number of new words) after a year, with no backlog.
 
 ## Data
 
-- **Course:** `public/sentences/NNN.json`, 40 chunks of 500, easiest first, plus `index.json`. Each row is `[tatoebaId, german, english, author, alternatives?]`. `src/lib/course.ts` lazy-loads chunks. The file is built by `scripts/build-sentences.py` from Tatoeba exports:
-  - Filters: native German authors only, 3 to 10 words, no names (the Tom/Maria sentences), no dark topics, no rare words.
-  - Ranking: by word frequency (hermitdave FrequencyWords).
-  - Rebuilding reorders sentences, which would break stored progress (it keys on course position). Don't rebuild for a live learner without a migration.
-- **Progress:** localStorage key `satz.v2`, type `Progress` in `lesson.ts`, parsed and validated in `src/lib/progress.ts`. It holds cards keyed by course position, `next` (the next position to introduce), the open lesson, history and accepted answers. Export/Import write and read this JSON.
+- **Course (version 2):** `public/sentences/NNN.json`, chunks of 500, plus `index.json` (`version`, `total`, `chunk`). Each row is `[tatoebaId, german, english, author, newWord, alternatives?]`. `src/lib/course.ts` lazy-loads chunks. Built by `scripts/build-sentences.py` from Tatoeba exports:
+  - Filters: native German authors only, 3 to 10 words, no names (the Tom/Maria sentences), no dark topics, no rare words, common volunteer mistakes ("dass ist").
+  - English: prefers translations by native English speakers, avoiding archaic words.
+  - Order ("i+1"): each sentence adds exactly one unknown word, the most frequent available first (hermitdave FrequencyWords), with near-identical neighbours kept apart. About 14,000 sentences, each teaching one word.
+  - Changing the order is a new course version: bump `VERSION` in the script and `COURSE_VERSION` in `lesson.ts`, and add a migration like `migrateFromCourse1`.
+- **Migration from course 1** (the earlier difficulty-ordered course): `public/sentences/legacy-v1.json` maps each course 1 position to its new position, or -1 with the sentence text. `migrateFromCourse1` in `progress.ts` keeps every learned card and its schedule: at the new position if the sentence exists there, otherwise as an "extra" at a negative position (stored in `progress.extra`, served by `getSentence`). An open lesson keeps its clock. It runs on load (`useProgress`) and on Import.
+- **Progress:** localStorage key `satz.v2`, type `Progress` in `lesson.ts`, parsed and validated in `src/lib/progress.ts`. It holds the course version, cards keyed by course position (negative for extras), `next` (positions already in `cards` are skipped), the open lesson, history, accepted answers, extras and the review log. Export/Import write and read this JSON.
 - **Licence:** sentences are CC BY 2.0 FR. Keep the Tatoeba credit in the UI and README, and keep ids and authors in the data.
 
 ## Server (Vercel)

@@ -29,10 +29,11 @@ const PHONE_VIEWPORT = {
   height: PHONE.screen.height - PHONE.insets.top - PHONE.insets.bottom,
 }
 
-// A learner a couple of weeks in: 300 sentences learned, a lesson open with 38 minutes to go.
+// A learner a few weeks in: 300 sentences learned, one lesson done today.
 const DAY = 86_400_000
 const stored = JSON.stringify({
   version: 2,
+  course: 2,
   next: 300,
   cards: Object.fromEntries(
     Array.from({ length: 300 }, (_, i) => [
@@ -54,7 +55,9 @@ const stored = JSON.stringify({
   ),
   lesson: null,
   accepted: {},
-  history: [{ started: NOW.getTime() - 3 * 3_600_000, ended: NOW.getTime() - 2 * 3_600_000, activeMs: 22 * 60_000, introduced: 9, reviewed: 41, firstTryCorrect: 33 }],
+  extra: {},
+  reviews: [],
+  history: [{ started: NOW.getTime() - 3 * 3_600_000, ended: NOW.getTime() - 2 * 3_600_000, activeMs: 22 * 60_000, introduced: 12, reviewed: 41, firstTryCorrect: 33 }],
 })
 // What to type for the test card, so one word shows as wrong.
 const wrong = (german) => german.replace(/^(\S+)/, (first) => (first === 'Ich' ? 'Du' : 'Ich'))

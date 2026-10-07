@@ -162,22 +162,36 @@ describe('lesson records', () => {
 })
 
 describe('resumeOrStart', () => {
-  const sameDay = (a: number, b: number) => Math.floor(a / DAY) === Math.floor(b / DAY)
-
-  it('carries on an unfinished lesson from the same day', () => {
+  it('carries on an unfinished lesson, even on a later day', () => {
     const open = introduce(startLesson(emptyProgress(), 0), 0)
-    expect(resumeOrStart(open, 5 * MIN, sameDay)).toBe(open)
-  })
-
-  it('closes a lesson left from an earlier day and starts a fresh hour', () => {
-    const open = introduce(startLesson(emptyProgress(), 0), 0)
-    const next = resumeOrStart(open, DAY + MIN, sameDay)
-    expect(next.lesson?.started).toBe(DAY + MIN)
-    expect(next.lesson?.clock.activeMs).toBe(0)
-    expect(next.history).toHaveLength(1)
+    expect(resumeOrStart(open, 5 * MIN)).toBe(open)
+    expect(resumeOrStart(open, 3 * DAY)).toBe(open)
   })
 
   it('starts a lesson when none is open', () => {
-    expect(resumeOrStart(emptyProgress(), 0, sameDay).lesson?.started).toBe(0)
+    expect(resumeOrStart(emptyProgress(), 0).lesson?.started).toBe(0)
+  })
+})
+
+describe('learned positions', () => {
+  it('skips course positions already learned, for example carried over from an earlier course', () => {
+    const learned = introduce(startLesson(emptyProgress(), 0), 0).cards[0]
+    let p: Progress = startLesson({ ...emptyProgress(), cards: { 0: learned, 2: learned } }, 0)
+    expect(nextStep(p, TOTAL, 0)).toEqual({ kind: 'intro', index: 1 })
+    p = introduce(p, 0)
+    expect(p.next).toBe(3)
+    expect(Object.keys(p.cards).sort()).toEqual(['0', '1', '2'])
+  })
+
+  it('logs every graded answer, but not a passed final pass', () => {
+    let p = startLesson(emptyProgress(), 0)
+    p = introduce(p, 0)
+    p = recordAnswer(p, 0, false, 'learning', MIN)
+    p = recordAnswer(p, 0, true, 'learning', 2 * MIN)
+    p = recordAnswer(p, 0, true, 'final', 3 * MIN)
+    expect(p.reviews).toEqual([
+      [0, MIN, 1],
+      [0, 2 * MIN, 3],
+    ])
   })
 })

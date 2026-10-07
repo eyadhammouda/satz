@@ -1,12 +1,12 @@
-/** One lesson lasts an hour of active study. */
-export const LESSON_MS = 60 * 60_000
+/** One lesson lasts 30 minutes of active study. */
+export const LESSON_MS = 30 * 60_000
 /** Without a key press, click or tap for this long, the clock stops at the last activity. */
 export const IDLE_MS = 2 * 60_000
 
 /**
  * Counts active study time. Time only accrues between activity pings that are
  * close together, so leaving the tab, walking away or closing the laptop does
- * not use up the hour.
+ * not use up the lesson.
  */
 export interface Clock {
   /** Active milliseconds counted so far. */

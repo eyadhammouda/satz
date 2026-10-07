@@ -1,3 +1,6 @@
+import type { ExtraSentence } from './lesson'
+import type { LegacyRow } from './progress'
+
 /** One sentence of the course: the German, its English translation and other German answers that also count. */
 export interface CourseSentence {
   /** Position in the course, from easiest to hardest. */
@@ -7,15 +10,18 @@ export interface CourseSentence {
   german: string
   english: string
   author: string
+  /** The word this sentence introduces, lower case. Empty for sentences from an earlier course. */
+  newWord: string
   alternatives: string[]
 }
 
 export interface CourseIndex {
+  version: number
   total: number
   chunk: number
 }
 
-type RawSentence = [id: number, german: string, english: string, author: string, alternatives?: string[]]
+type RawSentence = [id: number, german: string, english: string, author: string, newWord: string, alternatives?: string[]]
 
 const BASE = '/sentences/'
 let indexPromise: Promise<CourseIndex> | undefined
@@ -41,12 +47,13 @@ function loadChunk(chunk: number, size: number): Promise<CourseSentence[]> {
   if (!promise) {
     promise = getJson<RawSentence[]>(`${BASE}${String(chunk).padStart(3, '0')}.json`).then(
       (rows) => {
-        const sentences = rows.map(([tatoebaId, german, english, author, alternatives], i) => ({
+        const sentences = rows.map(([tatoebaId, german, english, author, newWord, alternatives], i) => ({
           index: chunk * size + i,
           tatoebaId,
           german,
           english,
           author,
+          newWord,
           alternatives: alternatives ?? [],
         }))
         loaded.set(chunk, sentences)
@@ -70,8 +77,24 @@ export async function ensureLoaded(indices: Iterable<number>): Promise<void> {
   await Promise.all([...needed].map((n) => loadChunk(n, chunk)))
 }
 
-/** A course sentence that is already loaded, or undefined. */
+/** The map from course 1 positions to this course, for migrating saved progress. */
+export async function loadLegacyV1(): Promise<LegacyRow[]> {
+  return getJson<LegacyRow[]>(`${BASE}legacy-v1.json`)
+}
+
+let extras: Record<string, ExtraSentence> = {}
+
+/** Sentences kept from an earlier course, which live at negative positions. */
+export function setExtraSentences(value: Record<string, ExtraSentence>) {
+  extras = value
+}
+
+/** A course sentence that is already loaded, or undefined. Negative positions are kept sentences from an earlier course. */
 export function getSentence(index: number): CourseSentence | undefined {
+  if (index < 0) {
+    const e = extras[index]
+    return e && { index, tatoebaId: e.tatoebaId, german: e.german, english: e.english, author: '', newWord: '', alternatives: e.alternatives }
+  }
   for (const [, sentences] of loaded) {
     const first = sentences[0]?.index ?? 0
     if (index >= first && index < first + sentences.length) return sentences[index - first]
